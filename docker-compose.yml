@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  # Postgres for local development
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ai_business_automation_dev
+      POSTGRES_USER: eitp
+      POSTGRES_PASSWORD: eitp
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+volumes:
+  db-data:
