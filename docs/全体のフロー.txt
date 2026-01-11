@@ -1,0 +1,219 @@
+ユーザーはチャットでメッセージと複数ファイルを添付できます
+
+1. 推奨されるUXデザイン：進捗可視化型
+単に「入力中...」と出すよりも、以下のように「AIが今どの工程にいるか」を表示することで、ユーザーの体感待ち時間を短縮し、安心感を与えます。
+ステップ表示の例
+📄 ファイルをアップロード中... (100%)
+🔍 AI OCRが文字を解析中... (約10秒)
+🧠 勘定科目を推論中... (約5秒)
+✅ 解析完了！仕訳案を確認してください。
+
+2. 処理フローの詳細設計
+「入力中」をずっと出すのではなく、WebSocket または SSE (Server-Sent Events) を使って、バックエンドから「今OCRが終わったよ」「今AIが考え中だよ」というイベントをリアルタイムにフロントへ送ります。
+処理の流れ
+ユーザー: ファイルを送信。
+フロント: 即座に「受領しました。解析を開始します（予想時間：約20秒）」とメッセージを表示。
+バックエンド:
+まず job_id を発行してフロントに返す。
+裏（Worker）で Azure OCR を実行。完了したらフロントへ「OCR完了」の信号を送る。
+次に Azure OpenAI を実行。完了したら「推論完了」の信号を送る。
+フロント: 各信号を受け取るたびに、チェックマークを付けていく。
+完了: 最終的なAIの回答（仕訳案のカード）をチャット画面に表示する。
+
+3. フロントエンド（Next.js）での実装イメージ
+チャット形式であれば、shadcn/ui などのコンポーネントライブラリを使うと、以下のような「AI回答カード」を綺麗に作れます。
+
+// 解析結果のカード表示イメージ（参考レベルのコード、必要によって製品標準レベルで改造してください）
+<Card>
+  <CardHeader>解析結果: 請求書（株式会社NTT）</CardHeader>
+  <CardContent>
+    <p>勘定科目: <strong>通信費</strong> (確信度: 98%)</p>
+    <p>金額: ¥5,500</p>
+    <p>プロジェクト: BWC-2024-01</p>
+  </CardContent>
+  <CardFooter>
+    <Button>マネーフォワードへ登録</Button>
+    <Button variant="outline">修正する</Button>
+  </CardFooter>
+</Card>
+
+4.WebSocket/通信プロトコルの設計（進捗の伝え方）
+解析に時間がかかる（15〜30秒）ため、HTTPの「リクエストして待つ」方式ではなく、サーバーから「今、OCRが終わったよ」とプッシュ通知を送る仕組みが必要です。
+通信シーケンス
+接続: フロントエンドがWebSocketでバックエンドに接続。
+アップロード: フロントがファイルをPOST送信（HTTP）。バックエンドは即座に job_id を返却。
+イベント受信: バックエンドのWorkerが処理を進めるごとに、WebSocket経由で以下のメッセージを送信。
+イベント名	        送信タイミング	    フロントの表示
+DOC_RECEIVED	ファイル保存完了時	「書類を受け付けました」
+OCR_PROCESSING	Azure OCR開始時	「文字を解析しています...」
+AI_THINKING	Azure OpenAI開始時	「勘定科目とプロジェクトを判定中...」
+ANALYSIS_COMPLETE	全処理完了時	解析結果（JSONデータ）を表示
+
+5.チャットUIのワイヤーフレーム（画面構成）
+直感的に操作でき、かつ「作業の進捗」がひと目で分かるレイアウト案です。
+画面レイアウト
+左サイドバー: 過去の履歴、拠点切り替え。
+中央チャットエリア:
+下部に**ファイル選択ボタン（複数対応）**とメッセージ入力。
+メッセージ送信後、吹き出しの中に「進捗インジケーター」を表示。
+右サイドバー（またはモーダル）: AIが導き出した「仕訳案」の詳細プレビュー。
+UXのポイント: > 複数のファイルを投げた場合、チャット内に「ファイルごとの進捗バー」が並ぶように設計します。これにより、ユーザーは「どの請求書が処理待ちか」を正確に把握できます
+
+6.APIレスポンスの型定義（表示データの構造）
+最終的にチャット画面に表示する、AIからの「回答」データの形を定義します。TypeScriptで型を定義しておくことで、フロントエンドでのバグを防ぎます。
+TypeScriptでの型定義例（参考レベルのコード、必要によって製品標準レベルで改造してください）
+interface AnalysisResult {
+  jobId: string;
+  status: 'success' | 'error';
+  data?: {
+    vendorName: string;      // 取引先名
+    invoiceDate: string;     // 日付
+    totalAmount: number;     // 合計金額
+    currency: string;        // 通貨 (JPY, MYR等)
+    accounting: {
+      accountItem: string;   // 勘定科目 (通信費等)
+      confidence: number;    // AIの確信度 (0.0~1.0)
+      reasoning: string;     // なぜその科目にしたかの理由
+    };
+    projectId: string;       // 紐付けられたプロジェクトコード
+  };
+  error?: string;            // エラー時のメッセージ
+}
+AIの回答メッセージ（UI表示イメージ）
+AIの返信として、単なるテキストではなく以下のようなインタラクティブなカードを表示させます。
+参考例：（金額、日付、口座情報、プロジェクトコード等）
+「解析が完了しました！以下の内容でマネーフォワードに登録してもよろしいですか？」
+取引先: 株式会社NTT
+金額: ¥5,500（消費税込み）
+科目: 通信費（理由：NTTの請求であるため）
+プロジェクト: BWC-2026-X [ 修正する ] [ このまま登録する ]
+
+おすすめ
+フロントエンド実装: apps/web でチャット画面のベース（shadcn/ui等を利用）
+バックエンド実装: FastAPI でWebSocketの口と、Azureを呼び出す非同期タスクを作る
+
+WebSocketを使用して、各フェーズ（OCR完了、AI推論完了など）をクライアントに通知します。
+サンプルコード（services/api-server/main.py）：
+import asyncio
+from fastapi import FastAPI, WebSocket, UploadFile, File
+from pydantic import BaseModel
+
+app = FastAPI()
+
+# 進捗イベントの型定義
+class ProgressUpdate(BaseModel):
+    status: str
+    message: str
+    progress: int
+    data: dict = None
+
+@app.websocket("/ws/analysis/{job_id}")
+async def websocket_endpoint(websocket: WebSocket, job_id: str):
+    await websocket.accept()
+    try:
+        # ステップ1: OCR解析 (シミュレーション)
+        await websocket.send_json({"status": "OCR_PROCESSING", "message": "Azure OCRで文字を解析中...", "progress": 30})
+        await asyncio.sleep(3) # 重い処理の代わり
+
+        # ステップ2: AI推論 (シミュレーション)
+        await websocket.send_json({"status": "AI_THINKING", "message": "勘定科目とプロジェクトを判定中...", "progress": 70})
+        await asyncio.sleep(2)
+
+        # ステップ3: 完了とデータ送信
+        final_result = {
+            "vendorName": "NTT Communications",
+            "totalAmount": 5500,
+            "accountItem": "通信費",
+            "projectId": "BWC-2026-01"
+        }
+        await websocket.send_json({
+            "status": "COMPLETED", 
+            "message": "解析が完了しました！", 
+            "progress": 100,
+            "data": final_result
+        })
+    except Exception as e:
+        await websocket.send_json({"status": "ERROR", "message": str(e), "progress": 0})
+    finally:
+        await websocket.close()
+
+フロントエンド実装 (Next.js / TypeScript)
+apps/web/src/app/chat/page.tsx
+shadcn/ui や lucide-react を使った、チャット形式の進捗UIです。
+サンプルコード：
+"use client";
+import { useState, useEffect } from 'react';
+import { Loader2, CheckCircle2, FileText, Send } from 'lucide-react';
+
+export default function AnalysisChat() {
+  const [messages, setMessages] = useState<any[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [currentProgress, setCurrentProgress] = useState({ message: '', percent: 0 });
+
+  const startAnalysis = () => {
+    const jobId = "job_" + Math.random().toString(36).substr(2, 9);
+    setIsProcessing(true);
+    
+    // WebSocket接続開始
+    const socket = new WebSocket(`ws://localhost:8000/ws/analysis/${jobId}`);
+
+    socket.onmessage = (event) => {
+      const response = JSON.parse(event.data);
+      setCurrentProgress({ message: response.message, percent: response.progress });
+
+      if (response.status === 'COMPLETED') {
+        setMessages(prev => [...prev, { role: 'ai', type: 'result', data: response.data }]);
+        setIsProcessing(false);
+        socket.close();
+      }
+    };
+  };
+
+  return (
+    <div className="flex flex-col h-screen max-w-2xl mx-auto p-4">
+      <div className="flex-1 overflow-y-auto space-y-4 mb-4">
+        {messages.map((m, i) => (
+          <div key={i} className={`p-4 rounded-lg ${m.role === 'ai' ? 'bg-slate-100' : 'bg-blue-500 text-white self-end'}`}>
+            {m.type === 'result' ? (
+              <div className="space-y-2">
+                <h3 className="font-bold border-bottom pb-1">解析完了レポート</h3>
+                <p>取引先: {m.data.vendorName}</p>
+                <p>金額: ¥{m.data.totalAmount.toLocaleString()}</p>
+                <p>科目: <span className="text-blue-600 font-bold">{m.data.accountItem}</span></p>
+                <button className="bg-blue-600 text-white px-4 py-2 rounded mt-2 w-full">マネーフォワードに登録</button>
+              </div>
+            ) : (
+              <p>{m.content}</p>
+            )}
+          </div>
+        ))}
+
+        {isProcessing && (
+          <div className="bg-slate-50 p-4 rounded-lg border border-dashed border-slate-300">
+            <div className="flex items-center gap-3 mb-2">
+              <Loader2 className="animate-spin text-blue-500" />
+              <span className="text-sm font-medium">{currentProgress.message}</span>
+            </div>
+            <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+              <div 
+                className="bg-blue-500 h-full transition-all duration-500" 
+                style={{ width: `${currentProgress.percent}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="border-t pt-4">
+        <button 
+          onClick={startAnalysis}
+          disabled={isProcessing}
+          className="flex items-center justify-center gap-2 w-full bg-blue-600 text-white py-3 rounded-xl disabled:bg-slate-400"
+        >
+          <FileText size={20} />
+          請求書をアップロードして解析
+        </button>
+      </div>
+    </div>
+  );
+}

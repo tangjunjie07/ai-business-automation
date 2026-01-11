@@ -7,6 +7,6 @@
   ],
   "scripts": {
     "bootstrap": "echo 'Run individual app/package setup (create-next-app / expo init)'",
-    "dev:web": "cd apps/web && echo 'Run create-next-app in this folder'"
+    "dev:web": "cd apps/web && npm run dev"
   }
 }

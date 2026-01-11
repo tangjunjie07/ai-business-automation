@@ -1,0 +1,257 @@
+AI業務自動化システム
+技術設計書
+
+バージョン: 1.0 | 作成日: 2026年1月9日 | ステータス: 確定版
+
+
+1.	システムアーキテクチャ概要
+
+全体構成
+本システムは、 4拠点（マレーシア、 BWC、 大連、 Unovia） の異なる業務フローと支払サイクルを統合管理するため、 マイクロサービス + マルチテナント型クラウドネイティブアーキテクチャを採用します。 各機能ドメイン（OCR解析、 照合、 会計連携など） を独立したサービスとして分割し、 スケーラビリティと保守性を確保します。
+
+
+[アーキテクチャ概要図]
+クライアント(Web/Mobile) ➡ API Gateway (Kong) ➡ 認証基盤
+⬇
+[Microservices Layer]
+Ingestion | OCR/AI | Reconciliation | Allocation | Accounting | Payment | Anomaly | Reporting
+
+
+
+
+設計思想
+ 	マルチテナント分離: データベースレベルで行レベルセキュリティ(RLS)を適用し、 拠点間のデータ混在を物理的‧ 論理的に防止します。
+ 	疎結合な連携: サービス間通信はgRPCおよび非同期メッセージング（Kafka） を使用し、 一部の障害が全体に波及しない設計とします。
+ 	拡張性: コンテナオーケストレーション（Kubernetes） により、 月末の請求書処理ピーク時など負荷に応じて自動スケールします。
+
+
+2.	レイヤー構成
+
+
+2.1	フロントエンド層
+ユーザー体験の向上と拠点ごとのUIカスタマイズ性を重視した構成です。
+
+コンポーネント	技術スタック	役割
+FW / 言語	React.js / Next.js 14+ (TypeScript)	SSRによる高速描画、  型安全性によるバグ抑制
+UIライブラリ	Material-UI (MUI)	エンタープライズ向けのデザイン一貫性確保
+状態管理	Zustand / TanStack Query	APIキャッシュ管理、 複雑な非同期状態の制御
+
+推奨理由: Next.jsのApp Router機能により、 ダッシュボードの各コンポーネント（利益率グラフ、 アラート一覧） を並列でデータ取得‧ レンダリングでき、 体感速度を大幅に向上できます。
+
+2.2	APIゲートウェイ層
+全てのクライアントリクエストのエントリポイントとして機能します。
+ 	Kong Gateway / AWS API Gateway: ルーティング、 SSL終端。
+ 	認証: OAuth 2.0 + JWT (JSON Web Token) を使用。 テナントIDをトークンに埋め込み、 後続サービスへ伝播させます。
+ 	制御: IP制限、 Rate Limiting（DDoS対策） 、 Throttling。
+
+2.3	マイクロサービス層
+ビジネスロジックの中核となる8つの主要サービスです。
+ 
+サービス名	技術スタック	主な役割
+1. Document Ingestion Service	
+Python / FastAPI	各種書類のアップロード受付、 ウイルススキャン、 振り分け
+
+2. OCR & AI Extraction Service	Azure Document Intelligence	
+請求書‧ 領収書のOCR処理、 特化型モデル適用
+3. Reconciliation Engine	Python / Pandas	報告書と支払通知書の突合、 不一致検出
+4. Project Allocation Service	Python / FastAPI	プロジェクトコード別工数‧ 人件費の自動分配
+5. Accounting Integration Service	
+Python / FastAPI	
+マネーフォワード仕訳データ生成‧ 送信
+6. Payment Execution Service	Node.js / Express	全銀システムAPI連携、 振込データ作成
+7. Anomaly Detection Service	Python / Scikit-learn	異常値検知（金額急増、 契約時間乖離など）
+8. Reporting & Analytics Service	
+Apache Superset	BIダッシュボード、  プロジェクト別採算分析
+
+3.	技術スタック詳細
+
+
+3.1	バックエンドフレームワーク: FastAPI
+Python 3.11+ と FastAPI を採用します。推奨理由:
+ 
+1.	非同期処理性能:避。
+ 
+ネイティブ対応により、  OCR待ち時間などのI/Oブロッキングを回
+ 
+2.	型安全性: Pydanticによる厳格なデータバリデーションで、 金融データの信頼性を担保。
+3.	自動ドキュメント生成: OpenAPI (Swagger UI) が自動生成され、 フロントエンド開発との連携がスムーズ。
+4.	Pythonエコシステム: Pandas, Scikit-learn等のデータ分析ライブラリとシームレスに統合可能。
+5.	開発速度: シンプルな記述量で高速にAPIを構築可能。
+
+実装コード例： FastAPIエンドポイント
+
+
+3.2	データベース設計: PostgreSQL 16+
+マルチテナント要件に対応するため、  PostgreSQLの高度な機能を活用します。
+
+マルチテナント 構成戦略
+ 	Row Level Security (RLS): 全てのテーブルに	カラムを付与し、  DBユーザーのセッショ
+ョン変数に基づいてアクセス可能な行を強制的に制限します。 アプリ側の実装ミスによる情報漏洩を防ぎます。
+
+ 
+ 	パーティショニング:
+ 
+または
+ 
+（月次） による宣言的パーティショニング
+ 
+を行い、 検索速度の維持と古いデータの管理を容易にします。
+
+テーブル設計とRLS設定例 (SQL)
+
+
+3.3	キャッシュ・ ストレージ戦略
+ 	Redis 7+: セッション管理、 API レスポンスキャッシュ、 Celeryのメッセージブローカーとして利用。
+ 	Amazon S3 / Azure Blob Storage: 請求書原本（PDF/画像） の永続化。 ライフサイクルポリシーにより、 法定保存期間（7年など） 経過後に自動アーカイブ。
+
+4.	AI・ 機械学習コンポーネント
+
+
+4.1	OCR & ドキュメント処理
+Azure Document Intelligence (旧 Form Recognizer)
+非定型の請求書や「支払通知書」 の高精度な読み取りに最適です。 事前学習済みモデル（Prebuilt Invoice model） に加え、  NTT/電通などの特定フォーマットにはカスタムニューラルモデルを追加学習させます。
+補完処理: LangChain + OpenAI GPT-4 Vision を使用し、 OCRで読み取れなかった手書き文字の推論や、 曖昧な品目からの勘定科目推測を行います。
+OCR処理実装例 (Python SDK)
+
+from azure. ai. formrecognizer import DocumentAnalysisClient from azure. core. credentials import AzureKeyCredential
+
+async def analyze_document( file_url: str) :
+client = DocumentAnalysisClient( endpoint=ENDPOINT, credential=AzureKey
+
+# 事前構築済みの請求書モデルを使用
+poller = client. begin_analyze_document_from_url( " prebuilt-invoice" , fi result = poller. result( )
+
+extracted_data = {}
+for idx, invoice in enumerate( result. documents) : vendor_name = invoice. fields. get( " VendorName" ) total = invoice. fields. get( " InvoiceTotal" )
+if vendor_name:
+extracted_data[ " vendor" ] = vendor_name. value if total:
+extracted_data[ " amount" ] = total. value return extracted_data
+
+4.2	自動照合・ 異常検知
+ 	照合エンジン: Pandasを使用し、   自社報告書データとOCR抽出データをDataFrameとして結合
+（Merge） し、 差分を抽出します。
+
+ 
+ 	異常検知: Scikit-learnの
+データから外れ値を検出します。
+
+5.	外部システム連携
+ 
+を使用し、 プロジェクトごとの利益率や経費の時系列
+ 
+ 
+5.1	マネーフォワードクラウド会計API連携
+仕訳データの自動登録を行います。
+ 	認証: OAuth 2.0 (Authorization Code Flow)。 アクセストークンとリフレッシュトークンをセキュアに管理します。
+ 
+ 	仕様: REST API。 仕訳作成エンドポイント ( 	) を使用。
+ 	Rate Limit対策: Redisを使用したトークンバケットアルゴリズムで、 API制限（例: 60req/min） を超えないよう制御します。
+
+5.2	銀行API連携（ 全銀システム）
+APIゲートウェイ方式（推奨） を採用し、 全銀ネットのAPIゲートウェイを経由して各銀行へ接続します。
+ 	セキュリティ: 電子証明書（クライアント証明書） とOAuth 2.0の併用。
+ 	署名: リクエストボディに対し、 秘密鍵を用いたJWT署名（JWS） を付与して改ざんを防止します。
+ 	鍵管理: 秘密鍵は AWS Secrets Manager または Azure Key Vault に格納し、 アプリケーションコードには含めません。
+
+
+6.	インフラストラクチャ
+
+6.1	クラウドプロバイダー選定
+本システムでは、  OCR精度の高さとエンタープライズ親和性から Microsoft Azure を推奨します。
+
+カテゴリ	AWS	Azure (推奨)
+コンテナ基盤	EKS (Elastic Kubernetes Service)	AKS (Azure Kubernetes Service)
+AI / OCR	Textract	Document Intelligence (高精度)
+DB	RDS for PostgreSQL	Azure Database for PostgreSQL
+OpenAI連携	なし (Bedrock等)	Azure OpenAI Service (セキュアに利用可)
+
+6.2	Kubernetesベースのコンテナオーケストレーション
+
+ 	Namespace分離:
+ 
+,
+ 
+のように拠点ごとにNamespaceを分割
+
+し、  リソースクォータを設定することで、  特定の拠点の負荷が他に影響しないようにします。
+ 	HPA (Horizontal Pod Autoscaler): CPU/メモリ使用率に基づきPod数を自動増減させます。
+
+7.	データフロー & メッセージング
+
+7.1	非同期処理アーキテクチャ
+OCR処理や銀行振込などの長時間処理は、 ユーザーのレスポンスをブロックしないよう非同期で実行します。
+ 	Message Broker: Apache Kafka (高スループット) またはRabbitMQ。
+ 
+ 	Task Queue: Celery (Python)。
+
+7.2	処理フロー
+ 
+ 
+1.	ユーザーが請求書PDFをアップロード ➡ API Gateway
+2.	Ingestion ServiceがS3に保存し、 Kafkaトピック
+3.	OCR Workerがイベントを検知し、 Azure APIをコール
+4.	解析完了後、 結果をDBに保存し、 トピック
+ 
+にイベント発行
+
+
+にイベント発行
+ 
+5.	Reconciliation Engineが結果を取得し、  報告書データと突合
+6.	不一致がなければ仕訳データを作成し、 Accounting Serviceへ依頼
+7.	ユーザーへWebSocketで完了通知
+
+Celeryタスク実装例
+
+
+8.	セキュリ ティ & コンプライアンス
+
+8.1	認証・ 認可
+ 	OAuth 2.0 + OpenID Connect: ID基盤としてAuth0またはAzure AD B2Cを利用。
+ 	MFA (多要素認証): 振込承認などの重要操作時に必須化。
+ 	RBAC: 「経理担当」「承認者」「システム管理者」 などのロールに基づきAPIアクセスを制御。
+
+8.2	データ保護
+ 	暗号化: 通信はTLS 1.3、 DB保管データはAES-256 (TDE) で暗号化。
+ 	監査ログ: 全てのAPI操作、 特に振込実行と承認ログはELK Stack (Elasticsearch, Logstash, Kibana)に集約し、 7年間改ざん不能な状態で保存。
+ 	電子帳簿保存法: 訂正削除履歴の記録機能、 タイムスタンプ付与要件を満たすシステム設計。
+ 
+9.	監視・ 運用
+
+9.1	監視スタック
+ 	Prometheus: コンテナ、 APIメトリクスの収集。
+ 	Grafana: メトリクスの可視化ダッシュボード。
+ 	Jaeger: マイクロサービス間の分散トレーシング（ボトルネック特定） 。
+ 	Sentry:  アプリケーションエラーのリアルタイム通知。
+
+9.2	KPI監視項目
+
+項目	目標値	監視ツール
+OCR処理時間	平均 5秒以内/ページ	Prometheus
+API応答時間	99パーセンタイル 200ms以内	Prometheus
+照合自動化率	90%以上	DB集計(Superset)
+システム稼働率	99.9%	CloudWatch / Azure Monitor
+
+10.	実装ロードマップ
+
+
+フェーズ1： 
+基本的なインプットから仕訳作成までを自動化し、 1拠点（例： マレーシア） でパイロット運用を開始します。
+ 	OCRエンジン構築、 Azure連携
+ 	マネーフォワード仕訳連携機能
+ 	基本ダッシュボード
+
+フェーズ2： 
+BWCのみ銀行API連携を実装します。
+ 	全銀APIゲートウェイ接続
+ 	マルチテナント機能の完全適用
+ 	照合エンジンの精度向上（NTT/電通フォーマット対応）
+
+フェーズ3： 
+AIによる高度な分析と自動化を完成させます。
+ 	異常検知アラートシステム
+ 
+ 	プロジェクト別利益予測AI
+ 	完全自動振込（承認フローのみ人間）
+
+End of Document AI業務自動化システム プロジェクトチーム

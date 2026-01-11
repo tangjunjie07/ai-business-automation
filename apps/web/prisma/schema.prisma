@@ -1,0 +1,140 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          String    @default("user")
+  tenantId      String?   // テナントIDを追加
+  createdAt     DateTime  @default(now())
+  tenant        Tenant?   @relation(fields: [tenantId], references: [id])
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Tenant {
+  id           String   @id @default(cuid())
+  code         String   @unique  // テナントコード（ログイン時に使用）
+  name         String   // テナント表示名
+  countryCode  String   @map("country_code")
+  createdAt    DateTime @default(now()) @map("created_at")
+  users        User[]
+  invoices     Invoice[]
+  ocrResults   OcrResult[]
+  reconciliations Reconciliation[]
+  journalEntries JournalEntry[]
+}
+
+model Invoice {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  projectId    String?  @map("project_id")
+  vendorName   String?  @map("vendor_name")
+  invoiceNumber String? @map("invoice_number")
+  invoiceDate  DateTime? @map("invoice_date")
+  dueDate      DateTime? @map("due_date")
+  totalAmount  Float?   @map("total_amount")
+  currency     String?  @default("JPY")
+  status       String?  @default("pending")
+  fileUrl      String?  @map("file_url")
+  ocrText      String?  @map("ocr_text")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  ocrResults   OcrResult[]
+  reconciliations Reconciliation[]
+}
+
+model OcrResult {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  invoiceId  String?  @map("invoice_id")
+  fileName   String   @map("file_name")
+  ocrText    String   @map("ocr_text")
+  confidence Float?   @default(0.0)
+  status     String?  @default("processing")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  invoice    Invoice? @relation(fields: [invoiceId], references: [id])
+}
+
+model Reconciliation {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  invoiceId     String   @map("invoice_id")
+  journalEntryId String  @map("journal_entry_id")
+  status        String?  @default("pending")
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant      @relation(fields: [tenantId], references: [id])
+  invoice       Invoice     @relation(fields: [invoiceId], references: [id])
+  journalEntry  JournalEntry @relation(fields: [journalEntryId], references: [id])
+}
+
+model JournalEntry {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  date          DateTime
+  description   String
+  debitAccount  String   @map("debit_account")
+  creditAccount String   @map("credit_account")
+  amount        Float
+  currency      String?  @default("JPY")
+  reference     String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  tenant        Tenant          @relation(fields: [tenantId], references: [id])
+  reconciliations Reconciliation[]
+}
