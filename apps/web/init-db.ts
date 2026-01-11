@@ -6,7 +6,16 @@ import { config } from 'dotenv'
 config({ path: '.env.local' })
 
 const connectionString = process.env.DATABASE_URL
-console.log('DATABASE_URL:', connectionString)
+if (connectionString) {
+  if (process.env.NODE_ENV === 'development') {
+    const masked = connectionString.replace(/(:\/\/)(.*@)/, '$1***@')
+    console.log('DATABASE_URL:', masked)
+  } else {
+    console.log('DATABASE_URL is set')
+  }
+} else {
+  console.log('DATABASE_URL is not set')
+}
 const pool = new Pool({ connectionString })
 const adapter = new PrismaPg(pool)
 

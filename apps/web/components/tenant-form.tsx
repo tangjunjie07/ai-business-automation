@@ -9,8 +9,8 @@ import toast from 'react-hot-toast'
 
 export default function TenantForm() {
   const [formData, setFormData] = useState({
-    tenantCode: '',
-    tenantName: '',
+    name: '',
+    domain: '',
     countryCode: 'JP',
     adminEmail: '',
     adminName: '',
@@ -28,14 +28,22 @@ export default function TenantForm() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        // align with API fields
+        body: JSON.stringify({
+          name: formData.name,
+          domain: formData.domain,
+          countryCode: formData.countryCode,
+          adminEmail: formData.adminEmail,
+          adminName: formData.adminName,
+          adminPassword: formData.adminPassword,
+        }),
       })
 
       if (response.ok) {
         toast.success('テナントと管理者を作成しました')
         setFormData({
-          tenantCode: '',
-          tenantName: '',
+          name: '',
+          domain: '',
           countryCode: 'JP',
           adminEmail: '',
           adminName: '',
@@ -68,21 +76,21 @@ export default function TenantForm() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="tenantCode">テナントコード</Label>
+              <Label htmlFor="domain">テナントコード (ドメイン)</Label>
               <Input
-                id="tenantCode"
-                name="tenantCode"
-                value={formData.tenantCode}
+                id="domain"
+                name="domain"
+                value={formData.domain}
                 onChange={handleChange}
                 required
               />
             </div>
             <div>
-              <Label htmlFor="tenantName">テナント名</Label>
+              <Label htmlFor="name">テナント名</Label>
               <Input
-                id="tenantName"
-                name="tenantName"
-                value={formData.tenantName}
+                id="name"
+                name="name"
+                value={formData.name}
                 onChange={handleChange}
                 required
               />

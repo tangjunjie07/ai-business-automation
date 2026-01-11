@@ -5,7 +5,7 @@ export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
   // Allow NextAuth/auth routes to bypass tenant requirement (super-admin login etc.)
-  if (pathname.startsWith('/api/auth')) {
+  if (pathname.startsWith('/api/auth') || pathname.startsWith('/api/super-admin')) {
     return NextResponse.next()
   }
 

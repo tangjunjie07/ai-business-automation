@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/componen
 import { Progress } from '@/components/ui/progress'
 import { Send, Upload } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { AnalysisResult, ProgressEvent } from '../types/analysis'
+import { AnalysisResult, ProgressEvent } from '@/types/analysis'
 
 interface Message {
   role: 'user' | 'assistant'

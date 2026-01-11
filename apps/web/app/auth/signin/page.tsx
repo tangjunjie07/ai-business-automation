@@ -1,12 +1,13 @@
-'use client'
+"use client"
 
 import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ROUTES, ROLES } from '../../../config'
+import { Button } from '../../components/ui/button'
+import { Input } from '../../components/ui/input'
+import { Label } from '../../components/ui/label'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card'
 
 export default function SignIn() {
   const [email, setEmail] = useState('')
@@ -33,12 +34,25 @@ export default function SignIn() {
     if (result?.error) {
       setError('ログイン情報が正しくありません')
     } else {
-      router.push('/dashboard')
+      try {
+        const res = await fetch('/api/auth/session')
+        const data = await res.json()
+        const role = data?.user?.role as string | undefined
+        if (role === ROLES.SUPER_ADMIN) {
+          router.push(ROUTES.SUPER_ADMIN_DASHBOARD)
+        } else if (role === ROLES.ADMIN) {
+          router.push(ROUTES.DASHBOARD)
+        } else {
+          router.push(ROUTES.CHAT)
+        }
+      } catch (e) {
+        router.push(ROUTES.DASHBOARD)
+      }
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-[80vh] flex items-center justify-center">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>AI業務自動化プラットフォーム</CardTitle>
@@ -47,13 +61,14 @@ export default function SignIn() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <Label htmlFor="tenantCode">テナントコード（通常ユーザー・管理者）</Label>
+              <Label htmlFor="tenantCode">テナントコード</Label>
               <Input
                 id="tenantCode"
                 type="text"
                 value={tenantCode}
                 onChange={(e) => setTenantCode(e.target.value)}
                 placeholder="例: company01"
+                required
               />
             </div>
             <div>
@@ -77,25 +92,23 @@ export default function SignIn() {
               />
             </div>
             {error && <p className="text-red-500 text-sm">{error}</p>}
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button
+              type="submit"
+              className="w-full h-14 text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-xl hover:shadow-2xl hover:shadow-blue-500/25 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 focus:ring-offset-transparent disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
+              disabled={isLoading}
+            >
               {isLoading ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  ログイン中...
-                </>
+                <div className="flex items-center justify-center gap-3">
+                  <div className="animate-spin rounded-full h-6 w-6 border-2 border-white border-t-transparent"></div>
+                  <span>ログイン中...</span>
+                </div>
               ) : (
-                'ログイン'
+                <div className="flex items-center justify-center gap-3">
+                  <span>ログイン</span>
+                </div>
               )}
             </Button>
           </form>
-          <div className="mt-4 text-center">
-            <p className="text-sm text-gray-600">
-              システム管理者の方は{' '}
-              <a href="/auth/super-admin-signin" className="text-blue-600 hover:underline">
-                こちらからログイン
-              </a>
-            </p>
-          </div>
         </CardContent>
       </Card>
     </div>

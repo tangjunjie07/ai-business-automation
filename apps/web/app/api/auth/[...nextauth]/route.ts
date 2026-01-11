@@ -1,82 +1,113 @@
-import NextAuth, { type Session } from 'next-auth'
+import NextAuth from 'next-auth'
 import { JWT } from 'next-auth/jwt'
 import { PrismaClient } from '@prisma/client'
-import CredentialsProvider from 'next-auth/providers/credentials'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
+import CredentialsProvider from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
+import { config } from 'dotenv'
+import { ROUTES, ROLES } from '../../../../config'
+
+config({ path: '.env.local' })
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
+  adapter: PrismaPg | undefined
+  pool: Pool | undefined
 }
 
-const connectionString = process.env.DATABASE_URL
-const pool = new Pool({ connectionString })
-const adapter = new PrismaPg(pool)
+function getPrisma() {
+  if (!globalForPrisma.prisma) {
+    const connectionString = process.env.DATABASE_URL
+    if (!connectionString) {
+      throw new Error('DATABASE_URL is not set')
+    }
+    globalForPrisma.pool = new Pool({ connectionString })
+    globalForPrisma.adapter = new PrismaPg(globalForPrisma.pool)
+    globalForPrisma.prisma = new PrismaClient({ adapter: globalForPrisma.adapter })
+  }
+  return globalForPrisma.prisma
+}
 
-const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter })
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
-
-const authOptions = {
+export const authOptions = {
   providers: [
     CredentialsProvider({
       name: 'credentials',
       credentials: {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' },
-        tenantCode: { label: 'Tenant Code', type: 'text', required: false }
+        tenantCode: { label: 'Tenant Code', type: 'text' }
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
+          if (process.env.NODE_ENV === 'development') {
+            console.debug('[AUTH] missing credentials', { email: credentials?.email, tenantCode: credentials?.tenantCode })
+          }
           return null
         }
 
-        let user;
-
-        if (credentials.tenantCode) {
-          // Regular user/admin login with tenant
-          const tenant = await prisma.tenant.findFirst({
-            where: { code: credentials.tenantCode }
+        // システム管理者（テナント不要）
+        if (!credentials.tenantCode) {
+          if (process.env.NODE_ENV === 'development') {
+            console.debug('System admin auth attempt', { email: credentials.email })
+          }
+          const admin = await getPrisma().user.findFirst({
+            where: {
+              email: credentials.email,
+              role: ROLES.SUPER_ADMIN
+            }
           })
-
-          if (!tenant) {
+          if (!admin || !admin.password) {
             return null
           }
-
-          user = await prisma.user.findUnique({
-            where: { 
-              email: credentials.email,
-              tenantId: tenant.id
-            },
-            select: { id: true, email: true, name: true, role: true, password: true, tenantId: true }
-          })
-        } else {
-          // Super admin login (no tenant)
-          user = await prisma.user.findUnique({
-            where: { 
-              email: credentials.email,
-              tenantId: null
-            },
-            select: { id: true, email: true, name: true, role: true, password: true, tenantId: true }
-          })
+          const isPasswordValid = await bcrypt.compare(credentials.password, admin.password)
+          if (!isPasswordValid) {
+            return null
+          }
+          if (process.env.NODE_ENV === 'development') {
+            console.debug('Admin authenticated', { email: admin.email, id: admin.id })
+          }
+          return {
+            id: admin.id,
+            email: admin.email,
+            name: admin.name,
+            role: admin.role,
+            tenantId: '0',
+            tenantCode: '',
+            tenantName: '',
+          }
         }
 
-        if (!user || !user.password) {
+        // テナントユーザー
+        // Find tenant by code
+        const tenant = await getPrisma().tenant.findUnique({
+          where: { code: credentials.tenantCode }
+        })
+        if (!tenant) {
           return null
         }
-
-        // Hash and compare passwords
-        const isValidPassword = await bcrypt.compare(credentials.password, user.password)
-        if (!isValidPassword) {
+        // Find user by email and tenant
+        const user = await getPrisma().user.findFirst({
+          where: {
+            email: credentials.email,
+            tenantId: tenant.id
+          }
+        })
+        if (!user || !user.password || !user.tenantId) {
           return null
         }
-
-        const { password, ...userWithoutPassword } = user
+        const isPasswordValid = await bcrypt.compare(credentials.password, user.password)
+        if (!isPasswordValid) {
+          return null
+        }
         return {
-          ...userWithoutPassword,
+          id: user.id,
+          email: user.email,
+          name: user.name,
           role: user.role,
-          tenantId: user.tenantId
+          tenantId: user.tenantId,
+          tenantCode: tenant.code,
+          tenantName: tenant.name,
         }
       }
     })
@@ -85,24 +116,31 @@ const authOptions = {
     strategy: 'jwt' as const
   },
   callbacks: {
-    jwt: async ({ token, user }: { token: JWT; user?: any }) => {
+    async jwt({ token, user }: { token: JWT; user?: any }) {
       if (user) {
         token.role = user.role
         token.tenantId = user.tenantId
+        token.tenantCode = user.tenantCode
+        token.tenantName = user.tenantName
       }
       return token
     },
-    session: async ({ session, token }: { session: Session; token: JWT }) => {
-      session.user.role = token.role as string
-      session.user.tenantId = token.tenantId as string
+    async session({ session, token }: { session: any; token: JWT }) {
+      if (token && session.user) {
+        session.user.id = token.sub!
+        session.user.role = token.role as string
+        session.user.tenantId = token.tenantId as string
+        session.user.tenantCode = token.tenantCode as string
+        session.user.tenantName = token.tenantName as string
+      }
       return session
     }
   },
   pages: {
-    signIn: '/auth/signin',
-  },
+    signIn: ROUTES.SIGNIN,
+  }
 }
 
 const handler = NextAuth(authOptions)
 
-export { handler as GET, handler as POST, authOptions }
+export { handler as GET, handler as POST }

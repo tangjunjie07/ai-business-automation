@@ -5,81 +5,115 @@ import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
 import bcrypt from 'bcryptjs'
-import { z } from 'zod'
+import { config } from 'dotenv'
+import { ROLES } from '../../../config'
+
+config({ path: '.env.local' })
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
+  adapter: PrismaPg | undefined
+  pool: Pool | undefined
 }
 
-const connectionString = process.env.DATABASE_URL
-const pool = new Pool({ connectionString })
-const adapter = new PrismaPg(pool)
+function getPrisma() {
+  if (!globalForPrisma.prisma) {
+    const connectionString = process.env.DATABASE_URL
+    if (!connectionString) {
+      throw new Error('DATABASE_URL is not set')
+    }
+    globalForPrisma.pool = new Pool({ connectionString })
+    globalForPrisma.adapter = new PrismaPg(globalForPrisma.pool)
+    globalForPrisma.prisma = new PrismaClient({ adapter: globalForPrisma.adapter })
+  }
+  return globalForPrisma.prisma
+}
 
-const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter })
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+    const tenantId = request.headers.get('x-tenant-id')
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant ID is required' }, { status: 400 })
+    }
 
-const userSchema = z.object({
-  email: z.string().email('有効なメールアドレスを入力してください'),
-  name: z.string().min(1, '名前は必須です'),
-  password: z.string().min(6, 'パスワードは6文字以上です'),
-  role: z.enum(['user', 'admin'], '役割はuserまたはadminである必要があります')
-})
+    // Get all users for the tenant
+    const users = await getPrisma().user.findMany({
+      where: { tenantId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
+    })
+
+    return NextResponse.json({ users })
+  } catch (error) {
+    console.error('Error fetching users:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
-
-    if (!session || (session.user.role !== 'admin' && session.user.role !== 'super_admin')) {
-      return NextResponse.json({ error: '権限がありません' }, { status: 403 })
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // super_adminはtenantId不要、adminは必須
-    if (session.user.role !== 'super_admin' && !session.user.tenantId) {
-      return NextResponse.json({ error: 'テナントIDが必要です' }, { status: 400 })
+    const tenantId = request.headers.get('x-tenant-id')
+    if (!tenantId) {
+      return NextResponse.json({ error: 'Tenant ID is required' }, { status: 400 })
     }
 
     const body = await request.json()
-    const validation = userSchema.safeParse(body)
+    const { name, email, password, role } = body
 
-    if (!validation.success) {
-      return NextResponse.json({ 
-        error: 'バリデーションエラー', 
-        details: validation.error.issues 
-      }, { status: 400 })
+    if (!name || !email || !password) {
+      return NextResponse.json({ error: 'Name, email, and password are required' }, { status: 400 })
     }
 
-    const { email, name, password, role } = validation.data
-
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
+    // Check if user already exists in this tenant
+    const existingUser = await getPrisma().user.findFirst({
+      where: {
+        email,
+        tenantId,
+      },
     })
-
     if (existingUser) {
-      return NextResponse.json({ error: 'ユーザーが既に存在します' }, { status: 400 })
+      return NextResponse.json({ error: 'Email already exists in this tenant' }, { status: 409 })
     }
 
+    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10)
 
-    // super_adminはtenantId: null、adminは自身のtenantId
-    const user = await prisma.user.create({
+    // Create user
+    const user = await getPrisma().user.create({
       data: {
+        name,
         email,
-        name: name || null,
         password: hashedPassword,
-        role,
-        tenantId: session.user.role === 'super_admin' ? null : session.user.tenantId
+        role: role || ROLES.USER,
+        tenantId,
       },
-      select: { id: true, email: true, name: true, role: true, tenantId: true }
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
     })
 
-    return NextResponse.json({ 
-      message: 'ユーザーを作成しました',
-      user 
-    })
-
+    return NextResponse.json({ user }, { status: 201 })
   } catch (error) {
     console.error('Error creating user:', error)
-    return NextResponse.json({ error: 'サーバーエラーが発生しました' }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

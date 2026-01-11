@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 import dotenv from 'dotenv'
 
 // Load environment variables from apps/web/.env.local
@@ -23,27 +23,42 @@ const prisma = new PrismaClient({ adapter })
 async function createSuperAdminUser() {
   try {
     const hashedPassword = await bcrypt.hash('superadmin123', 10)
+    console.log('Generated bcrypt hash for superadmin123:', hashedPassword)
+    // hashと照合テスト
+    const test = await bcrypt.compare('superadmin123', hashedPassword)
+    console.log('Hash compare test (should be true):', test)
 
-    // First create a tenant for the super admin (or use existing)
-    const tenant = await prisma.tenant.upsert({
-      where: { code: 'system-admin' },
-      update: {},
-      create: {
-        code: 'system-admin',
-        name: 'System Administration',
-        countryCode: 'JP',
+    // code: 'system-admin' のテナントが既に存在する場合はidを'0'にupdate、なければ新規作成
+    let tenant = await prisma.tenant.findUnique({ where: { code: 'system-admin' } })
+    if (tenant) {
+      if (tenant.id !== '0') {
+        // 既存テナントのidを'0'に変更
+        await prisma.tenant.update({ where: { code: 'system-admin' }, data: { id: '0' } })
+        tenant = await prisma.tenant.findUnique({ where: { code: 'system-admin' } })
       }
-    })
+    } else {
+      tenant = await prisma.tenant.create({
+        data: {
+          id: '0',
+          code: 'system-admin',
+          name: 'System Administration',
+          countryCode: 'JP',
+        }
+      })
+    }
 
     const user = await prisma.user.upsert({
       where: { email: 'superadmin@example.com' },
-      update: {},
+      update: {
+        password: hashedPassword,
+        tenantId: '0',
+      },
       create: {
         email: 'superadmin@example.com',
         name: 'Super Administrator',
         password: hashedPassword,
         role: 'super_admin',
-        tenantId: tenant.id,
+        tenantId: '0',
       }
     })
 

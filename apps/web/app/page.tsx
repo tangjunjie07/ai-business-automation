@@ -1,8 +1,9 @@
-"use client"
+'use client'
 
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
+import { ROUTES, ROLES } from '../config'
 
 export default function Home() {
   const { data: session, status } = useSession()
@@ -12,15 +13,22 @@ export default function Home() {
     if (status === 'loading') return // Still loading
 
     if (!session) {
-      router.push('/auth/signin')
+      router.push(ROUTES.SIGNIN)
     } else {
-      router.push('/dashboard')
+      const role = (session.user as any)?.role as string | undefined
+      if (role === ROLES.SUPER_ADMIN) {
+        router.push(ROUTES.SUPER_ADMIN_DASHBOARD)
+      } else if (role === ROLES.ADMIN) {
+        router.push(ROUTES.DASHBOARD)
+      } else {
+        router.push(ROUTES.CHAT)
+      }
     }
   }, [session, status, router])
 
   if (status === 'loading') {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-[60vh] items-center justify-center">
         <div className="text-lg">Loading...</div>
       </div>
     )
