@@ -153,13 +153,31 @@ export default function ChatInterface({ messages, onSendMessage, onAddMessage, i
 
     const totalAmount = candidate.totalAmount || candidate.amount || (ai && ai.totalAmount) || (ocr && ocr.totalAmount) || null
     const projectId = candidate.projectId || (ai && ai.projectId) || (ocr && ocr.projectId) || null
+    const invoiceDate = candidate.invoiceDate || (ai && ai.invoiceDate) || (ocr && ocr.invoiceDate) || null
+
+    // Build detailed accounting list if present
+    let accountingList: Array<any> = []
+    if (Array.isArray(candidate.accounting) && candidate.accounting.length > 0) {
+      accountingList = candidate.accounting.map((a: any) => ({
+        accountItem: a.accountItem || a.description || a.account || '不明',
+        subAccountItem: a.subAccountItem || a.sub_account || null,
+        confidence: typeof a.confidence === 'number' ? a.confidence : (a.confidence || 0),
+        amount: a.amount || a.value || null,
+        date: a.date || null,
+        reasoning: a.reasoning || a.reason || null
+      }))
+    } else if (accountItem) {
+      accountingList = [{ accountItem, subAccountItem: null, confidence, amount: totalAmount, date: invoiceDate, reasoning: null }]
+    }
 
     return {
       jobId: jobId,
       status: 'success',
       data: {
         file_name: fileName,
+        invoiceDate,
         accounting: { accountItem, confidence },
+        accountingList,
         totalAmount,
         projectId
       }
@@ -430,6 +448,15 @@ export default function ChatInterface({ messages, onSendMessage, onAddMessage, i
                   </div>
                   {message.analysisResult && (() => {
                     const fileName = getFileName(message.analysisResult.data)
+                    const invoiceDate = message.analysisResult.data?.invoiceDate || null
+                    const acct = (message.analysisResult.data?.accountingList && message.analysisResult.data.accountingList[0]) || message.analysisResult.data?.accounting || null
+                    const acctConfidence = acct?.confidence || 0
+                    const acctName = acct?.accountItem || '不明'
+                    const acctSub = acct?.subAccountItem || acct?.sub_account || null
+                    const acctAmount = acct?.amount || message.analysisResult.data?.totalAmount || null
+                    const acctDate = acct?.date || invoiceDate || null
+                    const acctReason = acct?.reasoning || null
+
                     return (
                       <div className="mt-4">
                         <Card>
@@ -437,9 +464,11 @@ export default function ChatInterface({ messages, onSendMessage, onAddMessage, i
                             <CardTitle>解析結果: {fileName || '請求書'}</CardTitle>
                           </CardHeader>
                           <CardContent>
-                            <p><strong>勘定科目:</strong> {message.analysisResult.data?.accounting.accountItem} (確信度: {Math.round((message.analysisResult.data?.accounting.confidence || 0) * 100)}%)</p>
-                            <p><strong>金額:</strong> ¥{message.analysisResult.data?.totalAmount?.toLocaleString()}</p>
-                            <p><strong>プロジェクト:</strong> {message.analysisResult.data?.projectId}</p>
+                            {invoiceDate && <p><strong>日付:</strong> {invoiceDate}</p>}
+                            <p><strong>勘定科目:</strong> {acctName} {acctSub ? `／${acctSub}` : ''} (確信度: {Math.round((acctConfidence || 0) * 100)}%)</p>
+                            {acctReason && <p><strong>理由:</strong> {acctReason}</p>}
+                            <p><strong>金額:</strong> {acctAmount ? `¥${Number(acctAmount).toLocaleString()}` : '不明'}</p>
+                            {message.analysisResult.data?.projectId && <p><strong>プロジェクト:</strong> {message.analysisResult.data?.projectId}</p>}
                           </CardContent>
                           <CardFooter className="flex gap-2">
                             <Button>マネーフォワードへ登録</Button>

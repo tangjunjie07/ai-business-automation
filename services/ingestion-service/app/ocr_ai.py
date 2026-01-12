@@ -53,14 +53,18 @@ class OCRConfig:
         self._validate_config()
 
     def _validate_config(self):
-        """Validate required configuration parameters."""
+        """Validate required configuration parameters.
+
+        NOTE: validation is tolerant to allow module import in dev/stub mode.
+        Actual required-ness of credentials is enforced at LLM/OCR call time.
+        """
         if not all([self.azure_endpoint, self.azure_key]):
-            raise ValueError("Azure Document Intelligence credentials are required")
+            logger.warning("Azure Document Intelligence credentials not fully provided; OCR calls will fail in real mode")
 
         if not (self.openai_api_key or (self.azure_openai_endpoint and self.azure_openai_api_key)):
-            raise ValueError("Either OpenAI API key or Azure OpenAI credentials must be provided")
+            logger.warning("OpenAI/Azure OpenAI credentials not provided; AI calls will fail in real mode")
 
-        logger.info("OCR configuration validated successfully")
+        logger.info("OCR configuration loaded (validation deferred)")
 
 config = OCRConfig()
 
@@ -241,7 +245,64 @@ def _to_canonical_from_raw(file_name: Optional[str], ocr_data: Optional[Dict[str
             canonical.invoiceDate = ia0.invoiceDate or None
             canonical.projectId = ia0.projectId or None
 
-        return canonical.dict()
+        # produce dict and add convenience top-level fields expected by frontend
+        out = canonical.dict()
+
+        # normalize accounting item dicts for JSON (primitive types)
+        def acct_to_primitive(a: AccountingItem) -> Dict[str, Any]:
+            return {
+                "accountItem": a.accountItem,
+                "subAccountItem": a.subAccountItem,
+                "confidence": float(a.confidence) if a.confidence is not None else 0.0,
+                "amount": float(a.amount) if a.amount is not None else None,
+                "date": a.date,
+                "reasoning": a.reasoning,
+            }
+
+        if out.get('inferred_accounts') and len(out['inferred_accounts']) > 0:
+            ia0 = out['inferred_accounts'][0]
+            # ensure accounting array exists at top-level for compatibility
+            accounting_arr = []
+            if isinstance(ia0.get('accounting'), list) and len(ia0.get('accounting')) > 0:
+                for a in ia0.get('accounting'):
+                    # if already dict-like, copy expected keys
+                    accounting_arr.append({
+                        'accountItem': a.get('accountItem') or a.get('account') or a.get('description') or '不明',
+                        'subAccountItem': a.get('subAccountItem') or a.get('sub_account') or None,
+                        'confidence': float(a.get('confidence') or 0),
+                        'amount': float(a.get('amount')) if a.get('amount') is not None else None,
+                        'date': a.get('date') or None,
+                        'reasoning': a.get('reasoning') or a.get('reason') or None,
+                    })
+            else:
+                # fall back to empty or synthesize from ia0
+                if ia0.get('accounting'):
+                    accounting_arr = ia0.get('accounting')
+                else:
+                    # synthesize single entry if possible
+                    acct_name = ia0.get('accounting')[0].get('accountItem') if ia0.get('accounting') and len(ia0.get('accounting'))>0 else None
+                    accounting_arr = []
+
+            out['accounting'] = accounting_arr
+
+            # set shortcuts to first accounting item
+            first = accounting_arr[0] if len(accounting_arr) > 0 else None
+            out['accountItem'] = first.get('accountItem') if first else (ia0.get('accountItem') or None)
+            out['confidence'] = float(first.get('confidence')) if first and first.get('confidence') is not None else (float(ia0.get('confidence') or 0))
+            out['amount'] = float(first.get('amount')) if first and first.get('amount') is not None else (float(ia0.get('totalAmount')) if ia0.get('totalAmount') is not None else None)
+        else:
+            out['accounting'] = []
+            out['accountItem'] = None
+            out['confidence'] = 0
+            out['amount'] = None
+
+        # top-level summary fields
+        out['totalAmount'] = out.get('totalAmount')
+        out['invoiceDate'] = out.get('invoiceDate')
+        out['projectId'] = out.get('projectId')
+        out['file_name'] = out.get('file_name')
+
+        return out
     except Exception as e:
         logger.exception("Failed to canonicalize raw analysis: %s", e)
         # fallback: best-effort minimal shape
@@ -323,28 +384,39 @@ prompt = PromptTemplate(
     template=USER_PROMPT_TEMPLATE
 )
 
-# Initialize LLM and parser
-try:
-    if config.azure_openai_endpoint and config.azure_openai_api_key:
-        llm = AzureChatOpenAI(
-            azure_endpoint=config.azure_openai_endpoint,
-            api_key=config.azure_openai_api_key,
-            api_version=config.azure_openai_api_version,
-            deployment_name=config.model_name,
-            temperature=0
-        )
-        logger.info(f"Using Azure OpenAI with model {config.model_name}")
-    else:
-        from langchain_openai import ChatOpenAI
-        llm = ChatOpenAI(model=config.model_name, temperature=0, openai_api_key=config.openai_api_key)
-        logger.info(f"Using standard OpenAI with model {config.model_name}")
+_llm = None
+_parser = None
 
-    parser = JsonOutputParser()
-    logger.info("LLM and parser initialized successfully")
+def get_llm_and_parser():
+    """Lazy initialize and return (llm, parser).
 
-except Exception as e:
-    logger.error(f"Failed to initialize LLM: {e}")
-    raise RuntimeError(f"LLM initialization failed: {e}")
+    Raises RuntimeError if initialization fails so callers can handle gracefully.
+    """
+    global _llm, _parser
+    if _llm is not None and _parser is not None:
+        return _llm, _parser
+
+    try:
+        if config.azure_openai_endpoint and config.azure_openai_api_key:
+            _llm = AzureChatOpenAI(
+                azure_endpoint=config.azure_openai_endpoint,
+                api_key=config.azure_openai_api_key,
+                api_version=config.azure_openai_api_version,
+                deployment_name=config.model_name,
+                temperature=0
+            )
+            logger.info("Using Azure OpenAI for LLM")
+        else:
+            from langchain_openai import ChatOpenAI
+            _llm = ChatOpenAI(model=config.model_name, temperature=0, openai_api_key=config.openai_api_key)
+            logger.info("Using standard OpenAI for LLM")
+
+        _parser = JsonOutputParser()
+        logger.info("LLM and parser initialized lazily")
+        return _llm, _parser
+    except Exception as e:
+        logger.error(f"Failed to initialize LLM lazily: {e}")
+        raise RuntimeError(f"LLM initialization failed: {e}")
 
 # チェーン作成（システムプロンプトを含む）
 from langchain_core.prompts import ChatPromptTemplate
@@ -566,10 +638,13 @@ async def _perform_ai_inference(ocr_content: str, items: Optional[List[Dict[str,
 
         # Log prompts for debugging (info level so developers can inspect without debug flag)
         try:
-            logger.info("--- SYSTEM PROMPT START ---\n%s\n--- SYSTEM PROMPT END ---", system_prompt_full)
-            logger.info("--- HUMAN PROMPT START ---\n%s\n--- HUMAN PROMPT END ---", human_content)
+            # Avoid logging full prompt contents in production to prevent noisy output
+            pass
         except Exception:
             pass
+
+        # initialize LLM/parser on first use
+        llm, parser = get_llm_and_parser()
 
         response = await asyncio.to_thread(
             llm.invoke,

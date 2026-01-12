@@ -2,6 +2,47 @@ name: CI
 
 on:
   push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: ai
+          POSTGRES_PASSWORD: ai
+          POSTGRES_DB: ai_business_automation_dev
+        options: >-
+          --health-cmd "pg_isready -U ai -d ai_business_automation_dev" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/ingestion-service/requirements.txt
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql://ai:ai@localhost:5432/ai_business_automation_dev
+          INGESTION_USE_REAL: 'false'
+          X_TENANT_ID: '00000000-0000-0000-0000-000000000000'
+          X_USER_ID: 'test-user'
+        run: |
+          pytest -q services/ingestion-service/tests/test_e2e.pyname: CI
+
+on:
+  push:
     branches: main
   pull_request:
     branches: main
