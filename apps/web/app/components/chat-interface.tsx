@@ -119,6 +119,53 @@ export default function ChatInterface({ messages, onSendMessage, onAddMessage, i
     }
   }, [analysisResult, onAddMessage])
 
+  // Map backend WS payload to UI AnalysisResult shape
+  const mapPayloadToAnalysis = (payload: any): AnalysisResult | null => {
+    if (!payload) return null
+    // backend may send { result: ocr_result, ai_result: ai_result } or just result
+    const ocr = payload.result || payload.ocr_result || null
+    const ai = payload.ai_result || payload.aiResult || null
+    // Prefer AI-inferred accounts, fall back to OCR-inferred accounts
+    const inferredFromAi = ai && Array.isArray(ai.inferred_accounts) && ai.inferred_accounts.length > 0 ? ai.inferred_accounts[0] : null
+    const inferredFromOcr = ocr && Array.isArray(ocr.inferred_accounts) && ocr.inferred_accounts.length > 0 ? ocr.inferred_accounts[0] : null
+
+    const candidate: any = inferredFromAi || inferredFromOcr || null
+    if (!candidate) return null
+
+    const jobId = payload.job_id || payload.jobId || null
+    const fileName = payload.file_name || (candidate.file_name || candidate.fileName) || null
+
+    // candidate may have either direct fields (accountItem, confidence, amount)
+    // or a nested `accounting` array with the detailed entry.
+    let accountItem = '不明'
+    let confidence = 0
+    if (candidate.accountItem) {
+      accountItem = candidate.accountItem
+      confidence = candidate.confidence || 0
+    } else if (Array.isArray(candidate.accounting) && candidate.accounting.length > 0) {
+      const a = candidate.accounting[0]
+      accountItem = a.accountItem || a.description || accountItem
+      confidence = (typeof a.confidence === 'number') ? a.confidence : (candidate.confidence || 0)
+    } else if (candidate.description) {
+      accountItem = candidate.description
+      confidence = candidate.confidence || 0
+    }
+
+    const totalAmount = candidate.totalAmount || candidate.amount || (ai && ai.totalAmount) || (ocr && ocr.totalAmount) || null
+    const projectId = candidate.projectId || (ai && ai.projectId) || (ocr && ocr.projectId) || null
+
+    return {
+      jobId: jobId,
+      status: 'success',
+      data: {
+        file_name: fileName,
+        accounting: { accountItem, confidence },
+        totalAmount,
+        projectId
+      }
+    }
+  }
+
   const handleFileUpload = async (files: File[]) => {
     // 選択時は即時送信せず、一時保持する
     setPendingFiles(files)
@@ -137,6 +184,11 @@ export default function ChatInterface({ messages, onSendMessage, onAddMessage, i
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const trimmed = input.trim()
+    // If user provided only a message but no files, require attachments
+    if (trimmed && pendingFiles.length === 0) {
+      toast.error('ファイルの添付が必要です。ファイルを選択してください。')
+      return
+    }
     if (!trimmed && pendingFiles.length === 0) return
 
     // まずローカルにユーザメッセージを追加
@@ -156,322 +208,144 @@ export default function ChatInterface({ messages, onSendMessage, onAddMessage, i
       return
     }
 
-    // 添付ファイルがある場合は、添付をコピーして UI を即時クリアしてから送信する
-    if (pendingFiles.length > 0) {
-      const filesToSend = pendingFiles.slice()
-      // UI 側は即時クリア（送信はバックグラウンドで継続）
-      setPendingFiles([])
+    // 添付ファイルの送信ロジック（IF を常に実行するようにしました）
+    const filesToSend = pendingFiles.slice()
+    // UI 側は即時クリア（送信はバックグラウンドで継続）
+    setPendingFiles([])
 
-      const formData = new FormData()
-      filesToSend.forEach(f => formData.append('files', f))
-      if (trimmed) formData.append('message', trimmed)
+    const formData = new FormData()
+    filesToSend.forEach(f => formData.append('files', f))
+    if (trimmed) formData.append('message', trimmed)
 
-      ;(async () => {
-        try {
-          const res = await fetch(`${API_BASE}/chat`, {
-            method: 'POST',
-            headers: {
-              'X-Tenant-ID': session.user.tenantId,
-              'X-USER-ID': session.user.id,
-            },
-            body: formData,
-          })
+    ;(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/chat`, {
+          method: 'POST',
+          headers: {
+            'X-Tenant-ID': session.user.tenantId,
+            'X-USER-ID': session.user.id,
+          },
+          body: formData,
+        })
 
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: 'upload failed' }))
-            throw new Error(err?.error || 'upload failed')
-          }
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: 'upload failed' }))
+          throw new Error(err?.error || 'upload failed')
+        }
 
-          const result = await res.json() as IngestChatResponse
-          // テスト用: サーバーからのレスポンスをコンソールに出力
-          console.log('[HTTP] /chat response (files):', result)
+        const result = await res.json() as IngestChatResponse
+        // テスト用: サーバーからのレスポンスをコンソールに出力
+        console.log('[HTTP] /chat response (files):', result)
 
-          // 型付きレスポンスとして扱う
-          const messagesArray: IngestMessage[] = result?.messages || []
-          // Prefer explicit invoiceIds array from new ack-style response
-          const invoiceIdsFromAck: string[] | undefined = (result && (result.invoiceIds || result.invoice_ids))
-          const firstInvoiceId: string | null = invoiceIdsFromAck && invoiceIdsFromAck.length > 0
-            ? invoiceIdsFromAck[0]
-            : (messagesArray.length > 0
-              ? (messagesArray[0].invoiceData?.invoice_id || messagesArray[0].id || messagesArray[0].invoice_id || null)
-              : null)
+        // Handle init-style synchronous response: { message, suggestions }
+        if (result && typeof result.message === 'string') {
+          const assistantMessage: Message = { role: 'assistant', content: result.message }
+          if (typeof onAddMessage === 'function') onAddMessage(assistantMessage)
+        }
 
-          if (invoiceIdsFromAck && invoiceIdsFromAck.length > 0) {
-            // build job entries from ack-provided invoiceIds
-            const jobEntries = invoiceIdsFromAck.map((id, i) => ({ id, name: filesToSend[i]?.name, progress: 10 }))
-            if (jobEntries.length > 0) {
-              setActiveJobs(prev => [...prev, ...jobEntries])
-              toast.success(`${jobEntries.length}個のファイルを送信しました。解析を開始します。`)
-              const wsBase = API_BASE.replace(/^http/, 'ws')
-              jobEntries.forEach(job => {
-                const createWsForJob = (jobId: string) => {
-                  try {
-                    const ws = new WebSocket(`${wsBase}/ws/progress/${jobId}`)
-                    wsMap.current[jobId] = ws
+        // 型付きレスポンスとして扱う（ack style invoice ids）
+        const invoiceIdsFromAck: string[] | undefined = (result && (result.invoiceIds || result.invoice_ids))
 
-                    ws.onopen = () => { wsRetry.current[jobId] = 0 }
+        if (invoiceIdsFromAck && invoiceIdsFromAck.length > 0) {
+          // build job entries from ack-provided invoiceIds
+          const jobEntries = invoiceIdsFromAck.map((id, i) => ({ id, name: filesToSend[i]?.name, progress: 10 }))
+          if (jobEntries.length > 0) {
+            setActiveJobs(prev => [...prev, ...jobEntries])
+            toast.success(`${jobEntries.length}個のファイルを送信しました。解析を開始します。`)
+            const wsBase = API_BASE.replace(/^http/, 'ws')
+            jobEntries.forEach(job => {
+              const createWsForJob = (jobId: string) => {
+                try {
+                  const ws = new WebSocket(`${wsBase}/ws/progress/${jobId}`)
+                  wsMap.current[jobId] = ws
 
-                    ws.onmessage = (event) => {
-                      const data: ProgressEvent = JSON.parse(event.data)
-                      // ignore keepalive pings or malformed messages
-                      if ((data as any).type === 'ping') return
-                      if (!data.event) return
+                  ws.onopen = () => { wsRetry.current[jobId] = 0 }
 
-                      console.log('[WS] progress for', jobId, data)
-                      const mapEventToProgress = (ev?: string) => {
-                        if (!ev) return null
-                        if (ev === 'DOC_RECEIVED') return 10
-                        if (ev === 'OCR_PROCESSING') return 40
-                        if (ev === 'AI_THINKING') return 70
-                        if (ev === 'ANALYSIS_COMPLETE') return 100
-                        if (ev === 'CANCELED') return 0
-                        return null
-                      }
+                  ws.onmessage = (event) => {
+                    const data: ProgressEvent = JSON.parse(event.data)
+                    // ignore keepalive pings or malformed messages
+                    if ((data as any).type === 'ping') return
+                    if (!data.event) return
 
-                      const p = mapEventToProgress(data.event)
-                      if (p !== null) {
-                        setActiveJobs(prev => prev.map(j => j.id === jobId ? { ...j, progress: p } : j))
-                      }
-
-                      if (data.event === 'ANALYSIS_COMPLETE') {
-                        if (data.result) {
-                          const analysis: AnalysisResult = data.result as AnalysisResult
-                          const assistantMessage: Message = {
-                            role: 'assistant',
-                            content: '解析が完了しました（非同期結果）',
-                            analysisResult: analysis
-                          }
-                          if (typeof onAddMessage === 'function') onAddMessage(assistantMessage)
-                        }
-                        setTimeout(() => setActiveJobs(prev => prev.filter(j => j.id !== jobId)), 600)
-                        try { ws.close() } catch (_) {}
-                        delete wsMap.current[jobId]
-                        delete wsRetry.current[jobId]
-                      }
-
-                      if (data.event === 'CANCELED') {
-                        setActiveJobs(prev => prev.filter(j => j.id !== jobId))
-                        try { ws.close() } catch (_) {}
-                        delete wsMap.current[jobId]
-                        delete wsRetry.current[jobId]
-                        if (typeof onAddMessage === 'function') {
-                          onAddMessage({ role: 'assistant', content: 'ジョブはキャンセルされました。' })
-                        }
-                      }
+                    console.log('[WS] progress for', jobId, data)
+                    const mapEventToProgress = (ev?: string) => {
+                      if (!ev) return null
+                      if (ev === 'DOC_RECEIVED') return 10
+                      if (ev === 'OCR_PROCESSING') return 40
+                      if (ev === 'AI_THINKING') return 70
+                      if (ev === 'ANALYSIS_COMPLETE') return 100
+                      if (ev === 'CANCELED') return 0
+                      return null
                     }
 
-                    ws.onerror = (err) => { console.warn('WS error for job', jobId, err) }
-                    ws.onclose = () => {
-                      const retries = wsRetry.current[jobId] || 0
-                      if (retries >= MAX_WS_RETRIES) { delete wsMap.current[jobId]; return }
-                      wsRetry.current[jobId] = retries + 1
-                      const backoff = WS_BACKOFF_BASE_MS * Math.pow(2, retries)
-                      setTimeout(() => { const stillActive = activeJobsRef.current.find(j => j.id === jobId); if (stillActive) createWsForJob(jobId) }, backoff)
-                    }
-                  } catch (e) { console.error('WS connection failed for job', job.id, e) }
-                }
-                createWsForJob(job.id)
-              })
-            }
-            // skip legacy handling below
-            // proceed to process any immediate messages if present
-          } else if (firstInvoiceId) {
-            // 複数ジョブ対応: レスポンスから各ジョブIDを取得して activeJobs を追加する
-            const messagesArrayTyped: IngestMessage[] = messagesArray as IngestMessage[]
-            const jobEntries = messagesArrayTyped.map((m: any, i: number) => {
-              const id = m.invoiceData?.invoice_id || m.id || m.invoice_id || null
-              const name = filesToSend[i]?.name
-              return id ? { id, name, progress: 10 } : null
-            }).filter(Boolean) as { id: string; name?: string; progress: number }[]
-
-            if (jobEntries.length > 0) {
-              setActiveJobs(prev => [...prev, ...jobEntries])
-              toast.success(`${jobEntries.length}個のファイルを送信しました。解析を開始します。`)
-              // 各ジョブごとに WebSocket を開いて進捗を受け取る
-              const wsBase = API_BASE.replace(/^http/, 'ws')
-              jobEntries.forEach(job => {
-                const createWsForJob = (jobId: string) => {
-                    try {
-                    const ws = new WebSocket(`${wsBase}/ws/progress/${jobId}`)
-                    wsMap.current[jobId] = ws
-
-                    ws.onopen = () => {
-                      wsRetry.current[jobId] = 0
-                    }
-
-                    ws.onmessage = (event) => {
-                      const data: ProgressEvent = JSON.parse(event.data)
-                      console.log('[WS] progress for', jobId, data)
-                      const mapEventToProgress = (ev?: string) => {
-                        if (!ev) return 0
-                        if (ev === 'DOC_RECEIVED') return 10
-                        if (ev === 'OCR_PROCESSING') return 40
-                        if (ev === 'AI_THINKING') return 70
-                        if (ev === 'ANALYSIS_COMPLETE') return 100
-                        if (ev === 'CANCELED') return 0
-                        return 0
-                      }
-                      const p = mapEventToProgress(data.event)
+                    const p = mapEventToProgress(data.event)
+                    if (p !== null) {
                       setActiveJobs(prev => prev.map(j => j.id === jobId ? { ...j, progress: p } : j))
+                    }
 
-                      if (data.event === 'ANALYSIS_COMPLETE') {
-                        if (data.result) {
-                          const analysis: AnalysisResult = data.result as AnalysisResult
-                          const assistantMessage: Message = {
-                            role: 'assistant',
-                            content: '解析が完了しました（非同期結果）',
-                            analysisResult: analysis
-                          }
-                          if (typeof onAddMessage === 'function') onAddMessage(assistantMessage)
+                    if (data.event === 'ANALYSIS_COMPLETE') {
+                      const analysis = mapPayloadToAnalysis(data)
+                      if (analysis) {
+                        const assistantMessage: Message = {
+                          role: 'assistant',
+                          content: '解析が完了しました（非同期結果）',
+                          analysisResult: analysis
                         }
-                        setTimeout(() => setActiveJobs(prev => prev.filter(j => j.id !== jobId)), 600)
-                        try { ws.close() } catch (_) {}
-                        delete wsMap.current[jobId]
-                        delete wsRetry.current[jobId]
+                        if (typeof onAddMessage === 'function') onAddMessage(assistantMessage)
                       }
-
-                      if (data.event === 'CANCELED') {
-                        // server-side cancel: remove job
-                        setActiveJobs(prev => prev.filter(j => j.id !== jobId))
-                        try { ws.close() } catch (_) {}
-                        delete wsMap.current[jobId]
-                        delete wsRetry.current[jobId]
-                        if (typeof onAddMessage === 'function') {
-                          onAddMessage({ role: 'assistant', content: 'ジョブはキャンセルされました。' })
-                        }
-                      }
+                      setTimeout(() => setActiveJobs(prev => prev.filter(j => j.id !== jobId)), 600)
+                      try { ws.close() } catch (_) {}
+                      delete wsMap.current[jobId]
+                      delete wsRetry.current[jobId]
                     }
 
-                    ws.onerror = (err) => {
-                      console.warn('WS error for job', jobId, err)
-                    }
-
-                    ws.onclose = () => {
-                      const retries = wsRetry.current[jobId] || 0
-                      if (retries >= MAX_WS_RETRIES) {
-                        console.warn('Max WS retries reached for', jobId)
-                        delete wsMap.current[jobId]
-                        return
+                    if (data.event === 'CANCELED') {
+                      setActiveJobs(prev => prev.filter(j => j.id !== jobId))
+                      try { ws.close() } catch (_) {}
+                      delete wsMap.current[jobId]
+                      delete wsRetry.current[jobId]
+                      if (typeof onAddMessage === 'function') {
+                        onAddMessage({ role: 'assistant', content: 'ジョブはキャンセルされました。' })
                       }
-                      wsRetry.current[jobId] = retries + 1
-                      const backoff = WS_BACKOFF_BASE_MS * Math.pow(2, retries)
-                      setTimeout(() => {
-                        // only reconnect if job still active
-                        const stillActive = activeJobsRef.current.find(j => j.id === jobId)
-                        if (stillActive) createWsForJob(jobId)
-                      }, backoff)
-                    }
-                  } catch (e) {
-                    console.error('WS connection failed for job', job.id, e)
-                  }
-                }
-
-                createWsForJob(job.id)
-              })
-            } else {
-              setCurrentJobId(firstInvoiceId)
-              toast.success(`${filesToSend.length}個のファイルを送信しました。解析を開始します。`)
-            }
-          } else {
-            toast.success('ファイルを送信しました。')
-          }
-          // 追加: サーバーが返した messages / results / 配列を即時にチャットへ反映
-          try {
-            const messagesArray = Array.isArray(result) ? result : (result.results || result.messages || [])
-            if (messagesArray && messagesArray.length > 0 && typeof onAddMessage === 'function') {
-              for (const m of messagesArray) {
-                const invoiceData = m.invoiceData || m.ocr_result || m
-                if (invoiceData) {
-                  const o = invoiceData.ocr_result || invoiceData
-                  const analysis: AnalysisResult = {
-                    data: {
-                      accounting: {
-                        accountItem: o.inferred_accounts?.[0]?.accountItem || o.inferred_accounts?.[0]?.description || '不明',
-                        confidence: o.inferred_accounts?.[0]?.confidence || 0
-                      },
-                      totalAmount: o.inferred_accounts?.[0]?.amount || o.totalAmount || null,
-                      projectId: o.projectId || null
                     }
                   }
-                  const assistantMessage: Message = {
-                    role: 'assistant',
-                    content: '解析が完了しました（同期結果）',
-                    analysisResult: analysis
+
+                  ws.onerror = (err) => {
+                    console.warn('WS error for job', jobId, err)
                   }
-                  onAddMessage(assistantMessage)
+
+                  ws.onclose = () => {
+                    const retries = wsRetry.current[jobId] || 0
+                    if (retries >= MAX_WS_RETRIES) { delete wsMap.current[jobId]; return }
+                    wsRetry.current[jobId] = retries + 1
+                    const backoff = WS_BACKOFF_BASE_MS * Math.pow(2, retries)
+                    setTimeout(() => { const stillActive = activeJobsRef.current.find(j => j.id === jobId); if (stillActive) createWsForJob(jobId) }, backoff)
+                  }
+                } catch (e) {
+                  console.error('WS connection failed for job', job.id, e)
                 }
               }
-            }
-          } catch (e) {
-            console.error('Failed to apply immediate OCR/AI results to chat:', e)
-          }
-        } catch (err) {
-          console.error(err)
-          toast.error('アップロードに失敗しました。')
-        } finally {
-          // 常に入力をクリア
-          setInput('')
-        }
-      })()
-    } else {
-      // ファイルなしのメッセージ単体送信: backend に message のみ送信して AI を呼び出す
-      const formData = new FormData()
-      formData.append('message', trimmed)
 
-      ;(async () => {
-        try {
-          const res = await fetch(`${API_BASE}/chat`, {
-            method: 'POST',
-            headers: {
-              'X-Tenant-ID': session.user.tenantId,
-              'X-USER-ID': session.user.id,
-            },
-            body: formData,
-          })
-
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: 'send failed' }))
-            throw new Error(err?.error || 'send failed')
-          }
-
-          const result = await res.json() as IngestChatResponse
-          // テスト用: サーバーからのレスポンスをコンソールに出力
-          console.log('[HTTP] /chat response (message):', result)
-          // テキスト送信では wrapper を期待
-          if (result.results && result.results.length > 0) {
-            // テキストのみの結果が返る場合の処理（必要に応じてハンドリング）
-            toast.success('メッセージを送信しました（AI 処理を開始）')
+              createWsForJob(job.id)
+            })
           } else {
-            toast.success('メッセージを送信しました。')
+            setCurrentJobId(firstInvoiceId)
+            toast.success(`${filesToSend.length}個のファイルを送信しました。解析を開始します。`)
           }
-          // 追加: メッセージ送信のレスポンスに即時推論結果が含まれる場合はチャットへ反映
-          try {
-            const messagesArray: IngestMessage[] = result.results || result.messages || []
-            if (messagesArray.length > 0 && typeof onAddMessage === 'function') {
-              for (const m of messagesArray) {
-                if (m.inferred || m.invoiceData) {
-                  const inferred = m.inferred || m.invoiceData?.inferred
-                  const analysis: AnalysisResult = { data: inferred }
-                  const assistantMessage: Message = {
-                    role: 'assistant',
-                    content: 'AI 推論結果です（同期）',
-                    analysisResult: analysis
-                  }
-                  onAddMessage(assistantMessage)
-                }
-              }
-            }
-          } catch (e) {
-            console.error('Failed to apply immediate AI results to chat:', e)
-          }
-        } catch (err) {
-          console.error(err)
-          toast.error('メッセージ送信に失敗しました。')
-        } finally {
-          setInput('')
+        } else {
+          toast.success('ファイルを送信しました。')
         }
-      })()
-    }
+        // Note: synchronous immediate result-to-card mapping intentionally skipped.
+        // The UI will display a single-line assistant message for sync responses
+        // and create full cards only when WS 'ANALYSIS_COMPLETE' arrives.
+      } catch (err) {
+        console.error(err)
+        toast.error('アップロードに失敗しました。')
+      } finally {
+        // 常に入力をクリア
+        setInput('')
+      }
+    })()
   }
 
   const removePendingFile = (index: number) => {

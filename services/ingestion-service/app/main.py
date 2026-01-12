@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional, List
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from .storage import get_storage
-from .ocr_ai import analyze_document
+from .ocr_ai import analyze_document, _to_canonical_from_raw
 from .db import init_db_pool, close_db_pool
 from .repos import (
     resolve_by_id_or_code,
@@ -103,6 +103,10 @@ class ChatResponse(BaseModel):
     jobId: str
     status: str
     messages: List[Message] = Field(default_factory=list)
+    # Optional top-level single-line message (for ack/init style)
+    message: Optional[str] = None
+    suggestions: List[Any] = Field(default_factory=list)
+    invoiceIds: Optional[List[str]] = None
 
 
 class ChatInitResponse(BaseModel):
@@ -217,7 +221,7 @@ async def cleanup_stale_jobs_loop():
         logger.error(f"cleanup_stale_jobs_loop crashed: {e}")
 
 
-async def process_invoice_task(tenant_id: str, invoice_id: str, file_bytes: bytes, filename: str, content_type: str, user_message: Optional[str] = None, file_url: Optional[str] = None):
+async def process_invoice_task(tenant_id: str, invoice_id: str, file_bytes: bytes, filename: str, content_type: str, user_message: Optional[str] = None, file_url: Optional[str] = None, test_index: Optional[int] = None):
     """Background task to process an invoice: perform (stubbed) OCR/AI, persist results, and emit progress events."""
     # If USE_REAL is False, run a simulated processing flow that emits the same events
     # but does not perform any DB writes or call external services.
@@ -226,23 +230,72 @@ async def process_invoice_task(tenant_id: str, invoice_id: str, file_bytes: byte
             await send_progress_event(invoice_id, 'DOC_RECEIVED')
             await asyncio.sleep(1)
             await send_progress_event(invoice_id, 'OCR_PROCESSING')
-            # fixed/stubbed OCR result (structure matches real analyze_document)
+            # Prepare minimal, safe default stub results (keep types consistent)
             ocr_result = {
-                "ocr_data": {"vendor": "スタブ株式会社"},
-                "ocr_content": "これはスタブのOCRテキストです",
-                "inferred_accounts": [
-                    {"description": "サンプル費用", "amount": 12345, "accountItem": "旅費交通費", "confidence": 0.95}
-                ]
+                "ocr_data": {},
+                "ocr_content": "",
+                "inferred_accounts": []
             }
-            # include original filename in stub results for UI display
-            ocr_result["file_name"] = filename
+            ai_result = {"inferred_accounts": [], "summary": ""}
+
+            # If test_index provided, try to load matching test-data/ai_result_{n}.json
+            if test_index:
+                try:
+                    # base_dir should point to repository root so test-data/ at project root is found
+                    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+                    # try load corresponding ai_result_{n}.json
+                    test_path = os.path.join(base_dir, 'test-data', f'ai_result_{test_index}.json')
+                    if os.path.exists(test_path):
+                        with open(test_path, 'r', encoding='utf-8') as tf:
+                            loaded = json.load(tf)
+                        ai_result = loaded
+                    # try load corresponding ocr_result_{n}.json and prefer it for ocr_result
+                    ocr_test_path = os.path.join(base_dir, 'test-data', f'ocr_result_{test_index}.json')
+                    if os.path.exists(ocr_test_path):
+                        try:
+                            with open(ocr_test_path, 'r', encoding='utf-8') as of:
+                                loaded_ocr = json.load(of)
+                            # Use loaded ocr_result as-is (assumed to match DB shape)
+                            ocr_result = loaded_ocr
+                            # ensure ai_result also has file_name when possible
+                            if 'file_name' in loaded_ocr and 'file_name' not in ai_result:
+                                ai_result['file_name'] = loaded_ocr.get('file_name')
+                        except Exception:
+                            logger.exception("Failed to parse ocr_result test file %s", ocr_test_path)
+                            # fallback: derive ocr_result from loaded ai_result if present
+                            ocr_result['inferred_accounts'] = ai_result.get('inferred_accounts', [])
+                    else:
+                        # no ocr_result test file: derive ocr_result from ai_result if available
+                        ocr_result['inferred_accounts'] = ai_result.get('inferred_accounts', [])
+                        if 'file_name' in ai_result:
+                            ocr_result['file_name'] = ai_result.get('file_name')
+                        else:
+                            ocr_result['file_name'] = filename
+                except Exception:
+                    logger.exception("Failed to load test-data ai_result for index %s", test_index)
+                    ocr_result['file_name'] = filename
+                    ai_result['file_name'] = filename
+            else:
+                ocr_result['file_name'] = filename
+                ai_result['file_name'] = filename
+
             await asyncio.sleep(1)
             await send_progress_event(invoice_id, 'AI_THINKING')
-            ai_result = {"inferred_accounts": ocr_result.get('inferred_accounts', []), "summary": "スタブAI結果"}
-            ai_result["file_name"] = filename
             # Do NOT call update_ocr_result or update_ai_result when USE_REAL is False
             await asyncio.sleep(0.5)
-            await send_progress_event(invoice_id, 'ANALYSIS_COMPLETE', {'result': ocr_result, 'ai_result': ai_result, 'file_name': filename})
+            try:
+                # convert stub results to canonical shape when possible
+                try:
+                    ocr_result_canonical = _to_canonical_from_raw(file_name=ocr_result.get('file_name'), ocr_data=ocr_result.get('ocr_data'), ocr_content=ocr_result.get('ocr_content'), inferred_accounts_raw=ocr_result.get('inferred_accounts'))
+                    ai_result_canonical = _to_canonical_from_raw(file_name=ai_result.get('file_name'), ocr_data=None, ocr_content=None, inferred_accounts_raw=ai_result.get('inferred_accounts'))
+                except Exception:
+                    ocr_result_canonical = ocr_result
+                    ai_result_canonical = ai_result
+
+                logger.info("ANALYSIS_COMPLETE payload (pre-send): %s", json.dumps({"result": ocr_result_canonical, "ai_result": ai_result_canonical, "file_name": filename}, ensure_ascii=False))
+            except Exception:
+                logger.exception("Failed to serialize ANALYSIS_COMPLETE payload for job %s", invoice_id)
+            await send_progress_event(invoice_id, 'ANALYSIS_COMPLETE', {'result': ocr_result_canonical, 'ai_result': ai_result_canonical, 'file_name': filename})
         except asyncio.CancelledError:
             await send_progress_event(invoice_id, 'CANCELED', {'reason': 'task_cancelled'})
             raise
@@ -288,7 +341,8 @@ async def process_invoice_task(tenant_id: str, invoice_id: str, file_bytes: byte
             await send_progress_event(invoice_id, 'OCR_PROCESSING')
             analysis = await analyze_document(file_to_analyze, tenant_id=tenant_id, job_id=invoice_id, progress_callback=send_progress_event, user_message=user_message)
 
-            ocr_result = {
+            # Prefer canonicalized results from analyzer when available
+            ocr_result = analysis.get('ocr_result') if analysis.get('ocr_result') else {
                 "ocr_data": analysis.get('ocr_data', {}),
                 "ocr_content": analysis.get('ocr_content', ''),
                 "inferred_accounts": analysis.get('inferred_accounts', [])
@@ -304,7 +358,7 @@ async def process_invoice_task(tenant_id: str, invoice_id: str, file_bytes: byte
                 logger.error(f"Failed to persist OCR result for {invoice_id}: {e}")
 
             await send_progress_event(invoice_id, 'AI_THINKING')
-            ai_result = {"inferred_accounts": ocr_result.get('inferred_accounts', []), "summary": analysis.get('summary', '')}
+            ai_result = analysis.get('ai_result') if analysis.get('ai_result') else {"inferred_accounts": ocr_result.get('inferred_accounts', []), "summary": analysis.get('summary', '')}
             try:
                 ai_result["file_name"] = filename
             except Exception:
@@ -314,6 +368,10 @@ async def process_invoice_task(tenant_id: str, invoice_id: str, file_bytes: byte
             except Exception as e:
                 logger.error(f"Failed to persist AI result for {invoice_id}: {e}")
 
+            try:
+                logger.info("ANALYSIS_COMPLETE payload (pre-send): %s", json.dumps({"result": ocr_result, "ai_result": ai_result, "file_name": filename}, ensure_ascii=False))
+            except Exception:
+                logger.exception("Failed to serialize ANALYSIS_COMPLETE payload for job %s", invoice_id)
             await send_progress_event(invoice_id, 'ANALYSIS_COMPLETE', {'result': ocr_result, 'ai_result': ai_result, 'file_name': filename})
 
         except Exception as e:
@@ -680,7 +738,9 @@ async def chat_with_files(
     try:
         # If files provided, process each file: create invoice, store, OCR+AI
         if files:
+            file_index = 0
             for file in files:
+                file_index += 1
                 if not file.filename:
                     continue
 
@@ -731,7 +791,11 @@ async def chat_with_files(
                 except Exception:
                     logger.warning(f"Failed to sanitize/log message for invoice {invoice_id}")
 
-                task = asyncio.create_task(process_invoice_task(tenant_id, invoice_id, content, file.filename, file.content_type, message, file_url=file_url))
+                # pass test_index when in stub mode so process_invoice_task can load test-data
+                if USE_REAL:
+                    task = asyncio.create_task(process_invoice_task(tenant_id, invoice_id, content, file.filename, file.content_type, message, file_url=file_url))
+                else:
+                    task = asyncio.create_task(process_invoice_task(tenant_id, invoice_id, content, file.filename, file.content_type, message, file_url=file_url, test_index=file_index))
                 job_tasks[invoice_id] = task
                 job_last_active[invoice_id] = time.time()
 
@@ -751,37 +815,14 @@ async def chat_with_files(
                 "id": job_id,
                 "role": "ai",
                 "type": "text",
-                "content": f"受け取りました。Job ID は {job_id} です。解析結果は WebSocket の完了イベントで受け取ってください。",
+                "content": f"受け取ったよ！Job IDは {job_id} です",
                 "invoiceData": None,
                 "suggestions": []
             }
             invoice_ids = [r.get('invoice_id') for r in results if r.get('invoice_id')]
             logger.info(f"Acknowledged job {job_id} for invoices: {invoice_ids}")
-            return {"jobId": job_id, "status": "success", "messages": [ack_message], "invoiceIds": invoice_ids}
 
-        # If only message provided -> AI inference
-        if (not files or len(files) == 0) and message:
-            logger.info("No files provided, invoking AI on message text")
-            from .ocr_ai import perform_ai_inference
-
-            sanitized = message.replace('\u201c', '"').replace('\u201d', '"').replace('\u2018', "'").replace('\u2019', "'")
-            try:
-                inferred = await perform_ai_inference(sanitized)
-                # Build unified message response
-                messages = [{
-                    "id": job_id,
-                    "role": "ai",
-                    "type": "text",
-                    "content": sanitized,
-                    "invoiceData": {"inferred": inferred},
-                    "suggestions": []
-                }]
-                return {"jobId": job_id, "status": "success", "messages": messages}
-            except Exception as e:
-                logger.error(f"AI inference failed for text-only request: {e}")
-                raise HTTPException(status_code=500, detail=str(e))
-
-        return {"jobId": job_id, "status": "error", "messages": []}
+            return {"jobId": job_id, "status": "success", "messages": [ack_message], "message": ack_message.get('content'), "suggestions": ack_message.get('suggestions', []), "invoiceIds": invoice_ids}
 
     except HTTPException:
         raise

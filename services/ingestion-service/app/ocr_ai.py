@@ -6,6 +6,7 @@ import re
 from typing import Dict, List, Any, Optional, Union
 from pathlib import Path
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_openai import AzureChatOpenAI
@@ -154,6 +155,106 @@ def parse_markdown_content(content: str) -> Dict[str, Any]:
         raise ValueError(f"Markdown parsing failed: {e}")
 
 master_data = load_master_data()
+
+
+# --- Canonical result schema (Pydantic) ---
+class AccountingItem(BaseModel):
+    accountItem: str
+    confidence: float = 0.0
+    amount: Optional[float] = None
+    date: Optional[str] = None
+    reasoning: Optional[str] = None
+    subAccountItem: Optional[str] = None
+
+
+class InferredAccount(BaseModel):
+    totalAmount: Optional[float] = None
+    invoiceDate: Optional[str] = None
+    projectId: Optional[str] = None
+    accounting: List[AccountingItem] = Field(default_factory=list)
+    summary: Optional[str] = None
+
+
+class CanonicalResult(BaseModel):
+    file_name: Optional[str] = None
+    totalAmount: Optional[float] = None
+    invoiceDate: Optional[str] = None
+    projectId: Optional[str] = None
+    inferred_accounts: List[InferredAccount] = Field(default_factory=list)
+    ocr_data: Optional[Dict[str, Any]] = None
+    ocr_content: Optional[str] = None
+
+
+def _to_canonical_from_raw(file_name: Optional[str], ocr_data: Optional[Dict[str, Any]], ocr_content: Optional[str], inferred_accounts_raw: Optional[List[Dict[str, Any]]]) -> dict:
+    """Normalize various AI/OCR raw shapes into CanonicalResult dict."""
+    try:
+        inferred_accounts: List[InferredAccount] = []
+        if inferred_accounts_raw and isinstance(inferred_accounts_raw, list):
+            for ia in inferred_accounts_raw:
+                # ia may contain `accounting` array or flattened fields
+                accounting_items: List[AccountingItem] = []
+                if isinstance(ia.get('accounting'), list) and len(ia.get('accounting')) > 0:
+                    for a in ia.get('accounting'):
+                        accounting_items.append(AccountingItem(
+                            accountItem=a.get('accountItem') or a.get('account') or a.get('description') or '不明',
+                            confidence=float(a.get('confidence') or 0),
+                            amount=a.get('amount') or a.get('value') or None,
+                            date=a.get('date') or None,
+                            reasoning=a.get('reasoning') or None,
+                            subAccountItem=a.get('subAccountItem') or a.get('sub_account') or None
+                        ))
+                else:
+                    # try to build a single accounting item from top-level fields
+                    acct_name = ia.get('accountItem') or ia.get('description') or ia.get('account')
+                    if acct_name:
+                        accounting_items.append(AccountingItem(
+                            accountItem=acct_name,
+                            confidence=float(ia.get('confidence') or 0),
+                            amount=ia.get('amount') or ia.get('totalAmount') or None,
+                            date=ia.get('date') or ia.get('invoiceDate') or None,
+                            reasoning=ia.get('reasoning') or None
+                        ))
+
+                ia_obj = InferredAccount(
+                    totalAmount=ia.get('totalAmount') or ia.get('total_amount') or None,
+                    invoiceDate=ia.get('invoiceDate') or ia.get('invoice_date') or None,
+                    projectId=ia.get('projectId') or ia.get('project_id') or None,
+                    accounting=accounting_items,
+                    summary=ia.get('summary') or None
+                )
+                inferred_accounts.append(ia_obj)
+
+        canonical = CanonicalResult(
+            file_name=file_name,
+            totalAmount=None,
+            invoiceDate=None,
+            projectId=None,
+            inferred_accounts=inferred_accounts,
+            ocr_data=ocr_data or {},
+            ocr_content=ocr_content or ""
+        )
+
+        # try to populate top-level totals from first inferred account if present
+        if len(canonical.inferred_accounts) > 0:
+            ia0 = canonical.inferred_accounts[0]
+            canonical.totalAmount = ia0.totalAmount or (ia0.accounting[0].amount if ia0.accounting and ia0.accounting[0].amount else None)
+            canonical.invoiceDate = ia0.invoiceDate or None
+            canonical.projectId = ia0.projectId or None
+
+        return canonical.dict()
+    except Exception as e:
+        logger.exception("Failed to canonicalize raw analysis: %s", e)
+        # fallback: best-effort minimal shape
+        return {
+            "file_name": file_name,
+            "totalAmount": None,
+            "invoiceDate": None,
+            "projectId": None,
+            "inferred_accounts": [],
+            "ocr_data": ocr_data or {},
+            "ocr_content": ocr_content or ""
+        }
+
 
 # プロンプトを読み込み
 def load_prompts() -> Dict[str, str]:
@@ -344,10 +445,24 @@ async def analyze_document(file_url: Union[str, Path], tenant_id: str = None, jo
         else:
             logger.warning("No OCR text available to perform AI inference")
 
+        # derive file_name from file_url when possible
+        file_name = None
+        try:
+            if file_url:
+                file_name = Path(str(file_url)).name
+        except Exception:
+            file_name = None
+
+        # Build canonical results for both OCR and AI so downstream can rely on fixed schema
+        ocr_result_canonical = _to_canonical_from_raw(file_name=file_name, ocr_data=ocr_data, ocr_content=ocr_content, inferred_accounts_raw=inferred_accounts)
+        ai_result_canonical = _to_canonical_from_raw(file_name=file_name, ocr_data=None, ocr_content=None, inferred_accounts_raw=inferred_accounts)
+
         return {
             "ocr_data": ocr_data,
             "ocr_content": ocr_content,
-            "inferred_accounts": inferred_accounts
+            "inferred_accounts": inferred_accounts,
+            "ocr_result": ocr_result_canonical,
+            "ai_result": ai_result_canonical
         }
 
     except AzureError as e:
