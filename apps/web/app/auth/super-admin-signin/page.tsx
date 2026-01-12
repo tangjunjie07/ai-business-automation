@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { ROUTES } from '../../../config'
+import { ROUTES } from '@/config'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
@@ -28,7 +28,6 @@ export default function SuperAdminSignIn() {
         password,
         redirect: false,
       })
-      if (process.env.NODE_ENV === 'development') console.debug('SIGNIN RESULT:', { ok: result?.ok, status: result?.status })
       if (result?.error || result?.status === 401 || result?.ok === false) {
         setError('ログイン情報が正しくありません')
         return

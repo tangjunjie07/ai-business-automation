@@ -5,7 +5,9 @@ import { usePathname } from 'next/navigation'
 import { useState, useRef, useEffect } from 'react'
 import { Menu, X, Grid, MessageSquare, Upload, Users } from 'lucide-react'
 import { useSession, signOut } from 'next-auth/react'
-import { ROUTES, ROLES, isNormalUser } from '../../config'
+import { ROUTES, ROLES, isNormalUser } from '@/config'
+
+type RoleValue = (typeof ROLES)[keyof typeof ROLES]
 
 export default function Header() {
   const pathname = usePathname() || '/'
@@ -14,7 +16,7 @@ export default function Header() {
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement | null>(null)
 
-  const nav = [
+  const nav: { href: string; label: string; icon: any; roles?: Array<(typeof ROLES)[keyof typeof ROLES]> }[] = [
     { href: ROUTES.DASHBOARD, label: 'ダッシュボード', icon: Grid, roles: [ROLES.ADMIN] },
     { href: ROUTES.CHAT, label: 'チャット', icon: MessageSquare, roles: [ROLES.ADMIN, ROLES.USER] },
   ]
@@ -40,7 +42,7 @@ export default function Header() {
               if (!n.roles) return true
               const role = session?.user?.role as string | undefined
               const isNormal = isNormalUser(role)
-              if (role && n.roles.includes(role)) return true
+              if (role && n.roles.includes(role as RoleValue)) return true
               if (n.roles.includes(ROLES.USER)) return isNormal
               return false
             })
@@ -130,7 +132,7 @@ export default function Header() {
                 if (!n.roles) return true
                 const role = session?.user?.role as string | undefined
                 const isNormal = isNormalUser(role)
-                if (role && n.roles.includes(role)) return true
+                if (role && n.roles.includes(role as RoleValue)) return true
                 if (n.roles.includes(ROLES.USER)) return isNormal
                 return false
               })

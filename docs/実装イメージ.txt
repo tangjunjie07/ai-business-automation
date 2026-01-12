@@ -1,0 +1,180 @@
+1. メッセージの型定義 (TypeScript)
+まず、チャットに流れるデータを「テキストメッセージ」なのか「解析結果カード」なのか判別できるように定義します。
+type Message = {
+  id: string;
+  role: 'user' | 'ai';
+  type: 'text' | 'invoice_card'; // ここで種類を分ける
+  content?: string;              // テキスト用
+  invoiceData?: any;             // カード用（Pythonから返ってきたJSON）
+  suggestions?: string[];        // 初回のサジェスト用
+};
+
+2. チャット画面の実装ロジック
+useState で messages 配列を作り、新しいデータが来たら [...prev, newMessage] で末尾に追加します。これにより、過去の履歴がクリアされることはありません。
+"use client";
+import { useState, useEffect } from 'react';
+import InvoiceCard from './InvoiceCard'; // 先ほどのカードコンポーネント
+
+export default function ChatPage() {
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  // 1. 初回の挨拶を取得（Pythonから取得）
+  useEffect(() => {
+    async function initChat() {
+      const res = await fetch('http://localhost:8000/chat/init');
+      const data = await res.json();
+      
+      const welcomeMsg: Message = {
+        id: 'init',
+        role: 'ai',
+        type: 'text',
+        content: data.message,
+        suggestions: data.suggestions
+      };
+      setMessages([welcomeMsg]); // 最初の一歩
+    }
+    initChat();
+  }, []);
+
+  // 2. OCR解析完了時にカードを追加する関数
+  const addInvoiceCard = (ocrResult: any) => {
+    const cardMsg: Message = {
+      id: Date.now().toString(),
+      role: 'ai',
+      type: 'invoice_card',
+      invoiceData: ocrResult
+    };
+    setMessages(prev => [...prev, cardMsg]); // 過去のメッセージを維持しつつ追加
+  };
+
+  return (
+    <div className="flex flex-col h-screen p-4 bg-gray-50">
+      <div className="flex-1 overflow-y-auto space-y-4">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            
+            {/* メッセージの種類によって出し分ける */}
+            {msg.type === 'text' ? (
+              <div className="bg-white p-3 rounded-lg shadow-sm max-w-[80%]">
+                <p>{msg.content}</p>
+                {msg.suggestions && (
+                  <div className="mt-2 flex gap-2">
+                    {msg.suggestions.map(s => (
+                      <button key={s} className="text-xs border border-blue-400 text-blue-500 rounded-full px-2 py-1">
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* 解析結果の場合はカードを表示 */
+              <InvoiceCard 
+                initialData={msg.invoiceData} 
+                onApprove={(data) => console.log("承認:", data)} 
+              />
+            )}
+            
+          </div>
+        ))}
+      </div>
+      
+      {/* 入力エリア（ここでファイルアップロード） */}
+      <div className="p-4 border-t">
+         {/* ...アップロードボタンなど... */}
+      </div>
+    </div>
+  );
+}
+
+3. この設計のメリット
+履歴の保存: setMessages(prev => [...prev, newMessage]) という書き方をしているため、ユーザーの質問、AIの回答、OCRカードが時系列順にすべて残ります。
+柔軟な表示:
+Pythonが「普通の返答」をしたら type: 'text'。
+Pythonが「解析結果」を返したら type: 'invoice_card'。 フロントエンドは if 文や三項演算子で表示を切り替えるだけです。
+複数ファイルの対応: 3枚の請求書をアップロードすれば、チャット画面に3枚のカードが順番に並びます。ユーザーはそれぞれのカードで「承認」を押せます。
+
+4. UIのさらなる工夫
+カードが表示された後、そのカードの中にある「承認」ボタンを押したら、そのカードの表示を**「承認済み（緑色のチェックマーク）」**に変化させると、どの作業が終わったか一目でわかるようになります。
+
+5. 「回答カード」コンポーネントの実装イメージ
+shadcn/ui などのライブラリを想定した、モダンなUIの実装イメージです。
+import { useState } from 'react';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Check, Edit2, RotateCcw } from "lucide-react";
+
+export default function InvoiceCard({ initialData, onApprove }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [data, setData] = useState(initialData);
+
+  // 承認ボタンを押した時の処理
+  const handleApprove = () => {
+    onApprove(data); // 最終的なデータをバックエンド（Python）に送る
+  };
+
+  return (
+    <Card className="w-[400px] border-l-4 border-l-blue-500 shadow-md">
+      <CardHeader>
+        <CardTitle className="text-sm font-medium text-muted-foreground flex justify-between">
+          AI解析結果
+          <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">確信度: 95%</span>
+        </CardTitle>
+      </CardHeader>
+      
+      <CardContent className="space-y-4">
+        {/* 取引先 */}
+        <div>
+          <label className="text-xs text-gray-500">取引先</label>
+          <Input 
+            value={data.vendorName} 
+            disabled={!isEditing}
+            onChange={(e) => setData({...data, vendorName: e.target.value})}
+            className={isEditing ? "border-blue-300" : "bg-transparent border-none p-0 h-auto font-bold"}
+          />
+        </div>
+        
+        {/* 金額と勘定科目 */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-gray-500">合計金額 (税込)</label>
+            <Input 
+              type="number"
+              value={data.totalAmount} 
+              disabled={!isEditing}
+              onChange={(e) => setData({...data, totalAmount: e.target.value})}
+              className={isEditing ? "border-blue-300" : "bg-transparent border-none p-0 h-auto font-bold"}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">勘定科目</label>
+            <Input 
+              value={data.accountItem} 
+              disabled={!isEditing}
+              onChange={(e) => setData({...data, accountItem: e.target.value})}
+              className={isEditing ? "border-blue-300" : "bg-transparent border-none p-0 h-auto font-bold text-blue-600"}
+            />
+          </div>
+        </div>
+      </CardContent>
+
+      <CardFooter className="flex justify-between border-t pt-4">
+        {isEditing ? (
+          <Button variant="outline" size="sm" onClick={() => setIsEditing(false)} className="w-full">
+            修正を確定
+          </Button>
+        ) : (
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setIsEditing(true)}>
+              <Edit2 className="w-4 h-4 mr-1" /> 修正
+            </Button>
+            <Button size="sm" onClick={handleApprove} className="bg-green-600 hover:bg-green-700 text-white">
+              <Check className="w-4 h-4 mr-1" /> 承認して登録
+            </Button>
+          </>
+        )}
+      </CardFooter>
+    </Card>
+  );
+}

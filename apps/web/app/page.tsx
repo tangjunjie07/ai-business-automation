@@ -3,7 +3,7 @@
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
-import { ROUTES, ROLES } from '../config'
+import { ROUTES, ROLES } from '@/config'
 
 export default function Home() {
   const { data: session, status } = useSession()

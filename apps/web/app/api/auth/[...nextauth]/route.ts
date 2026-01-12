@@ -5,20 +5,17 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
-import { config } from 'dotenv'
-import { ROUTES, ROLES } from '../../../../config'
-
-config({ path: '.env.local' })
+import appConfig, { ROUTES, ROLES } from '@/config'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
   adapter: PrismaPg | undefined
-  pool: Pool | undefined
+  pool: import('pg').Pool | undefined
 }
 
 function getPrisma() {
   if (!globalForPrisma.prisma) {
-    const connectionString = process.env.DATABASE_URL
+    const connectionString = appConfig.database.url
     if (!connectionString) {
       throw new Error('DATABASE_URL is not set')
     }
@@ -40,7 +37,7 @@ export const authOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          if (process.env.NODE_ENV === 'development') {
+          if (appConfig.runtime.env === 'development') {
             console.debug('[AUTH] missing credentials', { email: credentials?.email, tenantCode: credentials?.tenantCode })
           }
           return null
@@ -48,7 +45,7 @@ export const authOptions = {
 
         // システム管理者（テナント不要）
         if (!credentials.tenantCode) {
-          if (process.env.NODE_ENV === 'development') {
+          if (appConfig.runtime.env === 'development') {
             console.debug('System admin auth attempt', { email: credentials.email })
           }
           const admin = await getPrisma().user.findFirst({
@@ -64,7 +61,7 @@ export const authOptions = {
           if (!isPasswordValid) {
             return null
           }
-          if (process.env.NODE_ENV === 'development') {
+          if (appConfig.runtime.env === 'development') {
             console.debug('Admin authenticated', { email: admin.email, id: admin.id })
           }
           return {

@@ -22,14 +22,23 @@ AI推論の出力JSONフォーマット。
 
 ```json
 {
-  "account_item": "勘定科目名",
-  "sub_account_item": "補助科目名",
-  "amount": 0,
-  "date": "YYYY-MM-DD",
-  "account_info": "口座情報",
-  "project_code": "プロジェクトコード",
-  "confidence": 0.0,
-  "reasoning": "なぜその科目を選んだかの理由",
-  "is_anomaly": false
+  "totalAmount": 0,
+  "invoiceDate": "YYYY-MM-DD",
+  "currency": "JPY",
+  "projectId": "プロジェクトコード",
+  "accounting": [
+    {
+      "accountItem": "勘定科目名",
+      "subAccountItem": "補助科目名",
+      "amount": 0,
+      "date": "YYYY-MM-DD",
+      "confidence": 0.0,
+      "reasoning": "なぜその科目を選んだかの理由",
+      "is_anomaly": false
+    }
+  ],
+  "summary": "仕訳の要約や注記（任意）"
 }
 ```
+
+注意: フロントエンドとバックエンドの `ai_result` 構造に合わせて上記フィールドを返すことを想定しています。AIは必ず上記のJSON構造に従って出力してください。

@@ -85,6 +85,7 @@ model Invoice {
   status       String?  @default("pending")
   fileUrl      String?  @map("file_url")
   ocrText      String?  @map("ocr_text")
+  aiResult     Json?    @map("ai_result")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

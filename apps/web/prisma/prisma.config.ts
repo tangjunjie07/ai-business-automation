@@ -1,8 +1,2 @@
-import { defineConfig } from '@prisma/internals';
-
-export default defineConfig({
-  datasource: {
-    provider: 'postgresql',
-    url: process.env.DATABASE_URL,
-  },
-});
+// Re-export the top-level Prisma config to avoid duplication.
+export { default } from '../prisma.config'

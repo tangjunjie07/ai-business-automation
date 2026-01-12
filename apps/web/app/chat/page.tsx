@@ -2,8 +2,8 @@
 
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
-import { ROUTES } from '../../config'
+import { useEffect, useState } from 'react'
+import config, { ROUTES } from '@/config'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { LogIn, AlertCircle, ArrowLeft } from 'lucide-react'
@@ -20,6 +20,54 @@ export default function ChatPage() {
       router.push(ROUTES.SIGNIN)
     }
   }, [session, status, router])
+
+  const [messages, setMessages] = useState<any[]>(() => {
+    try {
+      const raw = localStorage.getItem('chat_messages')
+      return raw ? JSON.parse(raw) : []
+    } catch (e) {
+      return []
+    }
+  })
+  const [isLoading, setIsLoading] = useState(false)
+
+  // persist messages to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('chat_messages', JSON.stringify(messages))
+    } catch (e) {
+      // ignore
+    }
+  }, [messages])
+
+  // 初回メッセージをバックエンドから取得
+  useEffect(() => {
+    if (!session) return
+
+    async function fetchInit() {
+      try {
+        const API_BASE = config.network.apiBase
+        const res = await fetch(`${API_BASE}/chat/init`, {
+          headers: {
+            'X-Tenant-ID': session.user?.tenantId || '',
+            'X-USER-ID': session.user?.id || ''
+          }
+        })
+        if (!res.ok) throw new Error('failed')
+        const data = await res.json()
+        const welcome = {
+          role: 'assistant',
+          content: data.message,
+          suggestions: []
+        }
+        setMessages([welcome])
+      } catch (err) {
+        console.error('Failed to load initial chat', err)
+      }
+    }
+
+    fetchInit()
+  }, [session])
 
   // ローディング中
   if (status === 'loading') {
@@ -79,7 +127,12 @@ export default function ChatPage() {
       {/* チャットインターフェース */}
       <Card className="shadow">
         <CardContent className="p-4">
-          <ChatInterface />
+            <ChatInterface
+              messages={messages}
+              onSendMessage={(msg: string) => setMessages(prev => [...prev, { role: 'user', content: msg }])}
+              onAddMessage={(m: any) => setMessages(prev => [...prev, m])}
+              isLoading={isLoading}
+            />
         </CardContent>
       </Card>
 

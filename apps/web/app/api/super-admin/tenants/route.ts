@@ -3,20 +3,17 @@ import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
 import bcrypt from 'bcryptjs'
-import { config } from 'dotenv'
-import { ROLES } from '../../../../config'
-
-config({ path: '.env.local' })
+import appConfig, { ROLES } from '@/config'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
   adapter: PrismaPg | undefined
-  pool: Pool | undefined
+  pool: import('pg').Pool | undefined
 }
 
 function getPrisma() {
   if (!globalForPrisma.prisma) {
-    const connectionString = process.env.DATABASE_URL
+    const connectionString = appConfig.database.url
     if (!connectionString) {
       throw new Error('DATABASE_URL is not set')
     }

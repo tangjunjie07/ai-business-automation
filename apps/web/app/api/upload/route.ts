@@ -4,19 +4,18 @@ import { authOptions } from '../auth/[...nextauth]/route'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
-import { config } from 'dotenv'
+import appConfig from '@/config'
 
-config({ path: '.env.local' })
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
   adapter: PrismaPg | undefined
-  pool: Pool | undefined
+  pool: import('pg').Pool | undefined
 }
 
 function getPrisma() {
   if (!globalForPrisma.prisma) {
-    const connectionString = process.env.DATABASE_URL
+    const connectionString = appConfig.database.url
     if (!connectionString) {
       throw new Error('DATABASE_URL is not set')
     }
@@ -39,31 +38,43 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Tenant ID is required' }, { status: 400 })
     }
 
+    const userId = request.headers.get('x-user-id')
+    if (!userId) {
+      return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
+    }
+
+    // Verify user exists under tenant
+    const prisma = getPrisma()
+    const foundUser = await prisma.user.findFirst({ where: { id: userId, tenantId } })
+    if (!foundUser) {
+      // Frontend should redirect to registration/login flow when this happens
+      return NextResponse.json({ error: 'User not found under tenant' }, { status: 401 })
+    }
+
     const formData = await request.formData()
-    const file = formData.get('file') as File
+    const files = formData.getAll('files') as File[]
+    const message = formData.get('message') as string | null
 
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+    if (!files || files.length === 0) {
+      return NextResponse.json({ error: 'No files provided' }, { status: 400 })
     }
 
-    // Here you would typically:
-    // 1. Save the file to storage (local/S3/Azure)
-    // 2. Process the file with OCR AI
-    // 3. Store the results in the database
-
-    // For now, just return a success response
-    const result = {
-      fileName: file.name,
-      size: file.size,
-      type: file.type,
-      tenantId,
-      uploadedBy: session.user.id,
-      status: 'processing', // or 'completed' after OCR processing
-    }
+    // TODO: persist files to storage and create invoice/ocr records
+    // For now return a simulated results array with invoice IDs
+    const results = files.map((f, i) => ({
+      invoice_id: `inv_${Date.now()}_${i}`,
+      fileName: f.name,
+      size: f.size,
+      type: f.type,
+      status: 'processing'
+    }))
 
     return NextResponse.json({
-      message: 'File uploaded successfully',
-      result
+      message: 'Files uploaded successfully',
+      uploadedBy: userId,
+      tenantId,
+      messageText: message,
+      results
     }, { status: 201 })
 
   } catch (error) {

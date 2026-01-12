@@ -214,11 +214,8 @@ USER_PROMPT_TEMPLATE = prompts.get("user_prompt_template", "")
 
 # システムプロンプトをマスタデータでフォーマット
 output_format_json = json.dumps(master_data.get("output_format", {}), ensure_ascii=False, separators=(',', ':'))
-system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
-    master_data=master_data.get("markdown", ""),
-    ocr_content="{ocr_content}",  # プレースホルダー
-    output_format=output_format_json
-)
+# Keep the raw system prompt template; fill placeholders at runtime to avoid KeyError on import
+system_prompt = SYSTEM_PROMPT_TEMPLATE
 
 prompt = PromptTemplate(
     input_variables=["ocr_content"],
@@ -252,7 +249,7 @@ except Exception as e:
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 
-async def analyze_document(file_url: Union[str, Path]) -> Dict[str, Any]:
+async def analyze_document(file_url: Union[str, Path], tenant_id: str = None, job_id: str = None, progress_callback = None, user_message: Optional[str] = None) -> Dict[str, Any]:
     """
     Analyze document with OCR and AI inference.
 
@@ -268,8 +265,21 @@ async def analyze_document(file_url: Union[str, Path]) -> Dict[str, Any]:
         RuntimeError: For unexpected errors.
     """
     logger.info(f"Starting document analysis for: {file_url}")
+    # Log received user message (sanitized and truncated for safety)
+    try:
+        if user_message:
+            um = str(user_message).replace('\u201c', '"').replace('\u201d', '"').replace('\u2018', "'").replace('\u2019', "'")
+            logger.info(f"Received user_message (truncated 200): {um[:200]}")
+        else:
+            logger.info("No user_message provided for this analysis")
+    except Exception:
+        logger.warning("Failed to log user_message")
 
     try:
+        # Send progress: Starting OCR
+        if progress_callback:
+            await progress_callback(job_id, "ocr_start", {"message": "Starting OCR analysis"})
+
         # Initialize Azure Document Intelligence client
         client = DocumentAnalysisClient(
             endpoint=config.azure_endpoint,
@@ -301,29 +311,44 @@ async def analyze_document(file_url: Union[str, Path]) -> Dict[str, Any]:
         result = await asyncio.to_thread(poller.result)
         logger.info(f"OCR analysis completed, extracted {len(result.content)} characters")
 
+        # Send progress: OCR completed
+        if progress_callback:
+            await progress_callback(job_id, "ocr_complete", {"characters": len(result.content)})
+
         # Extract structured data
         ocr_data, items = _extract_invoice_data(result)
 
         # Get OCR content
         ocr_content = result.content or ""
 
-        # Perform AI inference if items found
-        if items:
-            logger.info(f"Found {len(items)} invoice items, starting AI inference")
-            inferred_accounts = await _perform_ai_inference(ocr_content)
+        # Perform AI inference: call AI even if items list is empty, using OCR text
+        logger.info(f"Starting AI inference (items_found={len(items)})")
+        # Send progress: AI inference starting
+        if progress_callback:
+            try:
+                await progress_callback(job_id, "ai_start", {"items_count": len(items)})
+            except Exception:
+                pass
+
+        inferred_accounts = []
+        # Only invoke AI when there's OCR content to analyze
+        if ocr_content and str(ocr_content).strip():
+            inferred_accounts = await _perform_ai_inference(ocr_content, items=items, ocr_data=ocr_data, user_message=user_message)
             logger.info("AI inference completed successfully")
-            return {
-                "ocr_data": ocr_data,
-                "ocr_content": ocr_content,
-                "inferred_accounts": inferred_accounts
-            }
+            # Send progress: AI inference completed
+            if progress_callback:
+                try:
+                    await progress_callback(job_id, "ai_complete", {"accounts_count": len(inferred_accounts)})
+                except Exception:
+                    pass
         else:
-            logger.warning("No invoice items extracted from document")
-            return {
-                "ocr_data": ocr_data,
-                "ocr_content": ocr_content,
-                "inferred_accounts": []
-            }
+            logger.warning("No OCR text available to perform AI inference")
+
+        return {
+            "ocr_data": ocr_data,
+            "ocr_content": ocr_content,
+            "inferred_accounts": inferred_accounts
+        }
 
     except AzureError as e:
         logger.error(f"Azure Document Intelligence error: {e}")
@@ -363,20 +388,79 @@ def _extract_invoice_data(result) -> tuple[Dict[str, Any], List[Dict[str, Any]]]
     return ocr_data, items
 
 
-async def _perform_ai_inference(ocr_content: str) -> List[Dict[str, Any]]:
+async def _perform_ai_inference(ocr_content: str, items: Optional[List[Dict[str, Any]]] = None, ocr_data: Optional[Dict[str, Any]] = None, user_message: Optional[str] = None) -> List[Dict[str, Any]]:
     """Perform AI inference on OCR content."""
     try:
-        # Format system prompt
+        # Prepare JSON snippets for system prompt substitution
         output_format_json = json.dumps(master_data.get("output_format", {}), ensure_ascii=False)
-        system_prompt_full = system_prompt.replace("{ocr_content}", ocr_content)
+        try:
+            items_json = json.dumps(items, ensure_ascii=False) if items else "[]"
+        except Exception:
+            items_json = "[]"
+        try:
+            ocr_data_json = json.dumps(ocr_data, ensure_ascii=False) if ocr_data else "{}"
+        except Exception:
+            ocr_data_json = "{}"
+
+        # Build system prompt at runtime so {ocr_items} and {ocr_data} can be filled
+        try:
+            system_prompt_full = SYSTEM_PROMPT_TEMPLATE.format(
+                master_data=master_data.get("markdown", ""),
+                ocr_content=ocr_content,
+                ocr_items=items_json,
+                ocr_data=ocr_data_json,
+                output_format=output_format_json
+            )
+        except Exception:
+            # fallback to previous behavior
+            system_prompt_full = system_prompt.replace("{ocr_content}", ocr_content)
 
         # Create chain and invoke
-        user_message = prompts.get("user_message", "Analyze the invoice OCR text and infer account subjects.")
+        # keep default prompt text separate so we don't overwrite the function arg `user_message`
+        default_user_message = prompts.get("user_message", "Analyze the invoice OCR text and infer account subjects.")
+        # combine OCR content, structured items, ocr_data and optional user message into a single human prompt
+        # sanitize user_message special quotes
+        payload_parts = ["OCR Text:\n", ocr_content]
+        if items:
+            try:
+                items_json = json.dumps(items, ensure_ascii=False)
+                payload_parts.append("\n\nExtracted Items (JSON):\n")
+                payload_parts.append(items_json)
+            except Exception:
+                payload_parts.append("\n\nExtracted Items: (unserializable)\n")
+        if ocr_data:
+            try:
+                ocr_data_json = json.dumps(ocr_data, ensure_ascii=False)
+                payload_parts.append("\n\nOCR Metadata (JSON):\n")
+                payload_parts.append(ocr_data_json)
+            except Exception:
+                payload_parts.append("\n\nOCR Metadata: (unserializable)\n")
+
+        # include provided user_message or fall back to default_user_message
+        try:
+            if user_message:
+                um = str(user_message).replace('\u201c', '"').replace('\u201d', '"').replace('\u2018', "'").replace('\u2019', "'")
+            else:
+                um = default_user_message
+            payload_parts.append("\n\nUser Message:\n")
+            payload_parts.append(um)
+        except Exception:
+            payload_parts.append("\n\nUser Message: (unserializable)\n")
+
+        human_content = ''.join(payload_parts)
+
+        # Log prompts for debugging (info level so developers can inspect without debug flag)
+        try:
+            logger.info("--- SYSTEM PROMPT START ---\n%s\n--- SYSTEM PROMPT END ---", system_prompt_full)
+            logger.info("--- HUMAN PROMPT START ---\n%s\n--- HUMAN PROMPT END ---", human_content)
+        except Exception:
+            pass
+
         response = await asyncio.to_thread(
             llm.invoke,
             [
                 SystemMessage(content=system_prompt_full),
-                HumanMessage(content=user_message)
+                HumanMessage(content=human_content)
             ]
         )
 
@@ -387,6 +471,15 @@ async def _perform_ai_inference(ocr_content: str) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"AI inference failed: {e}")
         raise RuntimeError(f"AI inference failed: {e}")
+
+
+async def perform_ai_inference(text: str) -> List[Dict[str, Any]]:
+    """
+    Public helper to perform AI inference on arbitrary text (no OCR).
+    """
+    # sanitize text
+    txt = text.replace('\u201c', '"').replace('\u201d', '"').replace('\u2018', "'").replace('\u2019', "'")
+    return await _perform_ai_inference(txt)
 
 
 # Test functions have been removed for production
