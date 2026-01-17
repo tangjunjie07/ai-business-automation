@@ -28,6 +28,7 @@ from .repos import (
     mark_invoice_failed,
     mark_invoice_canceled,
 )
+from app.routes import classify
 
 # Load environment variables
 load_dotenv()
@@ -52,6 +53,8 @@ app = FastAPI(
     description="Document ingestion and OCR processing service",
     version="1.0.0"
 )
+
+app.include_router(classify.router)
 
 # Structured logging helper
 def log_structured(level: str, message: str, **fields: Any):
@@ -180,6 +183,118 @@ async def _run_stub_flow(tenant_id: str, invoice_id: str, file_bytes: bytes, fil
         await asyncio.sleep(1)
         await send_progress_event(invoice_id, 'AI_THINKING')
         await asyncio.sleep(0.5)
+
+        # ========================================
+        # 【新機能テスト】Master照合 + DB保存機能
+        # ========================================
+        try:
+            logger.info("=== AI Classification & Master Matching & DB Persistence ===")
+            
+            inferred_accounts = ai_result.get("inferred_accounts") or []
+            
+            if inferred_accounts:
+                # 取引データをClaude処理用に変換
+                transactions = []
+                for acc in inferred_accounts:
+                    tx = {
+                        "vendor": acc.get("vendorName", "不明"),
+                        "description": acc.get("description", ""),
+                        "amount": float(acc.get("amount", 0)),
+                        "direction": "income" if acc.get("type") == "income" else "expense",
+                        "date": acc.get("date", ""),
+                        "_ref": acc
+                    }
+                    transactions.append(tx)
+                
+                # Claude予測 or モックデータ生成
+                has_api_key = bool(os.getenv("ANTHROPIC_API_KEY"))
+                if has_api_key:
+                    logger.info(f"Processing {len(transactions)} transactions with Claude AI")
+                    from app.account_classifier.predictor_claude import ClaudePredictor
+                    predictor = ClaudePredictor()
+                    classified_txs = transactions
+                else:
+                    logger.info(f"Processing {len(transactions)} transactions with mock data (no API key)")
+                    predictor = None
+                    classified_txs = _generate_mock_claude_results(transactions)
+
+                # Stub mode normally avoids DB writes. If you want to test DB persistence in stub,
+                # enable: INGESTION_STUB_PERSIST_DB=true
+                stub_persist_db = os.getenv("INGESTION_STUB_PERSIST_DB", "false").lower() in ("1", "true", "yes")
+                if stub_persist_db:
+                    try:
+                        from app.repos.invoice_repo import ensure_invoice
+                        from app.account_classifier.pipeline import run_account_classifier
+
+                        async with app.state.db_pool.acquire() as conn:
+                            # Ensure RLS session variable is set for this background connection.
+                            try:
+                                await conn.execute(
+                                    "SELECT set_config('app.current_tenant_id', $1, true)",
+                                    tenant_id,
+                                )
+                            except Exception as e:
+                                logger.warning(f"Stub persist: failed to set RLS session for tenant {tenant_id}: {e}")
+
+                            stub_file_url = f"/tmp/ingestion/{tenant_id}/{invoice_id}_{filename.replace(' ', '_')}"
+                            ok = await ensure_invoice(conn, tenant_id=tenant_id, invoice_id=invoice_id, file_url=stub_file_url)
+                            if not ok:
+                                raise RuntimeError("Invoice exists under different tenant (RLS) or could not be ensured")
+
+                        pipeline_result = await run_account_classifier(
+                            transactions=classified_txs,
+                            predictor=predictor,
+                            generate_mf_csv=False,
+                            persist_db=True,
+                            db_pool=app.state.db_pool,
+                            tenant_id=tenant_id,
+                            invoice_id=invoice_id,
+                        )
+                        classified_txs = pipeline_result.transactions
+                        persisted_count = pipeline_result.persisted_count
+                    except Exception as e:
+                        logger.exception(f"Stub persist: failed to ensure Invoice and persist predictions: {e}")
+                        persisted_count = 0
+                else:
+                    logger.info("Stub persist disabled (set INGESTION_STUB_PERSIST_DB=true to write DB in stub mode)")
+                    persisted_count = 0
+                
+                # 元のinferred_accountsを更新（画面表示用）
+                for tx in classified_txs:
+                    ref = tx.get("_ref")
+                    if ref:
+                        ref["accountItem"] = tx.get("accountName")
+                        ref["confidence"] = tx.get("confidence")
+                        ref["reasoning"] = tx.get("reasoning")
+                        if tx.get("matched_vendor_id"):
+                            ref["matchedVendorId"] = tx.get("matched_vendor_id")
+                            ref["matchedVendorName"] = tx.get("matched_vendor_name")
+                            ref["vendorConfidence"] = tx.get("vendor_confidence")
+
+                # MF CSV を生成（分類・マスタ照合・pipeline の後に実行する）
+                # 重要: checkbox 表示条件は WS payload の ai_result.mf_csv が埋まること。
+                try:
+                    from app.account_classifier.pipeline import build_mf_csv_from_transactions
+
+                    mf_csv = build_mf_csv_from_transactions(classified_txs)
+                    if mf_csv:
+                        ai_result["mf_csv"] = mf_csv
+                        ocr_result["mf_csv"] = mf_csv
+                except Exception:
+                    logger.exception("Stub: failed to generate mf_csv")
+                
+                if stub_persist_db:
+                    logger.info(f"Successfully processed {len(classified_txs)} transactions; persisted {persisted_count}")
+                else:
+                    logger.info(f"Successfully processed {len(classified_txs)} transactions (DB persist disabled)")
+                
+        except Exception as e:
+            logger.exception(f"Error during AI classification and DB persistence: {e}")
+            logger.warning("Continuing with existing flow despite classification error")
+        # ========================================
+        # 【新機能テスト終了】
+        # ========================================
+
         try:
             try:
                 ocr_result_canonical = _to_canonical_from_raw(file_name=ocr_result.get('file_name'), ocr_data=ocr_result.get('ocr_data'), ocr_content=ocr_result.get('ocr_content'), inferred_accounts_raw=ocr_result.get('inferred_accounts'))
@@ -189,6 +304,16 @@ async def _run_stub_flow(tenant_id: str, invoice_id: str, file_bytes: bytes, fil
                 ai_result_canonical = ai_result
         except Exception:
             logger.exception("Failed to prepare ANALYSIS_COMPLETE payload for job %s", invoice_id)
+
+        # --- ここから追加：canonical 化で落ちる mf_csv を付け直す ---
+        try:
+            mf_csv = ai_result.get("mf_csv") or ocr_result.get("mf_csv")
+            if mf_csv and isinstance(ai_result_canonical, dict):
+                ai_result_canonical["mf_csv"] = mf_csv
+        except Exception:
+            logger.exception("Failed to attach mf_csv to canonical payload")
+        logger.info("Stub payload has mf_csv=%s", bool(ai_result_canonical.get("mf_csv")))
+        # --- ここまで追加 ---
 
         await _emit_analysis_complete(invoice_id, ocr_result_canonical, ai_result_canonical, filename)
     except asyncio.CancelledError:
@@ -989,3 +1114,131 @@ async def cancel_chat_job(job_id: str, request: Request) -> CancelResponse:
     except Exception as e:
         logger.error(f"Failed to cancel job {job_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========================================
+# モックデータ生成関数（ANTHROPIC_API_KEYなしでテスト用）
+# ========================================
+
+def _generate_mock_claude_results(transactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Claude APIキーがない場合の模擬データ生成
+    
+    Args:
+        transactions: 取引データのリスト
+        
+    Returns:
+        Claude予測結果を模擬した取引データリスト
+    """
+    # 取引先と勘定科目のマッピング（模擬用）
+    vendor_mapping = {
+        "東京電力": {
+            "account": "水道光熱費",
+            "confidence": 0.95,
+            "vendor_id": "V004",
+            "vendor_name": "東京電力エナジーパートナー株式会社",
+            "vendor_confidence": 0.92,
+            "reasoning": "電力会社からの請求のため水道光熱費として分類"
+        },
+        "ドコモ": {
+            "account": "通信費",
+            "confidence": 0.93,
+            "vendor_id": "V005",
+            "vendor_name": "株式会社NTTドコモ",
+            "vendor_confidence": 0.88,
+            "reasoning": "携帯電話キャリアからの請求のため通信費として分類"
+        },
+        "ABC商事": {
+            "account": "消耗品費",
+            "confidence": 0.88,
+            "vendor_id": "V001",
+            "vendor_name": "株式会社ABC商事",
+            "vendor_confidence": 0.85,
+            "reasoning": "事務用品の購入として消耗品費に分類"
+        },
+        "XYZ物産": {
+            "account": "売上高",
+            "confidence": 0.90,
+            "vendor_id": "V002",
+            "vendor_name": "株式会社XYZ物産",
+            "vendor_confidence": 0.82,
+            "reasoning": "商品販売による収入として売上高に分類"
+        },
+        "Amazon": {
+            "account": "消耗品費",
+            "confidence": 0.85,
+            "vendor_id": "V006",
+            "vendor_name": "アマゾンジャパン合同会社",
+            "vendor_confidence": 0.90,
+            "reasoning": "オンラインでの備品購入として消耗品費に分類"
+        },
+        "Google": {
+            "account": "広告宣伝費",
+            "confidence": 0.92,
+            "vendor_id": "V007",
+            "vendor_name": "グーグル合同会社",
+            "vendor_confidence": 0.87,
+            "reasoning": "オンライン広告サービスの利用料として広告宣伝費に分類"
+        }
+    }
+    
+    # デフォルトの分類（マッピングにない場合）
+    default_expense = {
+        "account": "雑費",
+        "confidence": 0.65,
+        "vendor_id": None,
+        "vendor_name": None,
+        "vendor_confidence": None,
+        "reasoning": "分類不明のため雑費として処理"
+    }
+    
+    default_income = {
+        "account": "売上高",
+        "confidence": 0.70,
+        "vendor_id": None,
+        "vendor_name": None,
+        "vendor_confidence": None,
+        "reasoning": "収入として売上高に分類"
+    }
+    
+    classified_txs = []
+    
+    for tx in transactions:
+        vendor = tx.get("vendor", "")
+        direction = tx.get("direction", "expense")
+        
+        # 取引先名で部分マッチを試みる
+        mock_result = None
+        for key, value in vendor_mapping.items():
+            if key in vendor or vendor in key:
+                mock_result = value.copy()
+                break
+        
+        # マッチしない場合はデフォルト
+        if not mock_result:
+            mock_result = default_income.copy() if direction == "income" else default_expense.copy()
+        
+        # 取引データに予測結果を追加
+        tx_result = tx.copy()
+        tx_result.update({
+            "accountName": mock_result["account"],
+            "confidence": mock_result["confidence"],
+            "reasoning": mock_result["reasoning"],
+            "matched_vendor_id": mock_result["vendor_id"],
+            "matched_vendor_name": mock_result["vendor_name"],
+            "vendor_confidence": mock_result["vendor_confidence"],
+            "claude_raw_response": json.dumps({
+                "account": mock_result["account"],
+                "confidence": mock_result["confidence"],
+                "reasoning": mock_result["reasoning"],
+                "vendor_id": mock_result["vendor_id"],
+                "vendor_name": mock_result["vendor_name"],
+                "vendor_confidence": mock_result["vendor_confidence"]
+            }, ensure_ascii=False),
+            "claude_model": "mock-claude-3.5-sonnet",
+            "claude_tokens_used": 0  # モックデータなのでトークン使用なし
+        })
+        
+        classified_txs.append(tx_result)
+    
+    return classified_txs

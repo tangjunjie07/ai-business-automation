@@ -5,6 +5,12 @@ generator client {
   provider = "prisma-client-js"
 }
 
+generator py {
+  provider = "prisma-client-py"
+  interface = "asyncio"
+  recursive_type_depth = 5
+}
+
 datasource db {
   provider = "postgresql"
 }
@@ -70,6 +76,8 @@ model Tenant {
   ocrResults   OcrResult[]
   reconciliations Reconciliation[]
   journalEntries JournalEntry[]
+  claudePredictions ClaudePrediction[]
+  mfJournalEntries MfJournalEntry[]
 }
 
 model Invoice {
@@ -84,7 +92,7 @@ model Invoice {
   currency     String?  @default("JPY")
   status       String?  @default("pending")
   fileUrl      String?  @map("file_url")
-  ocrText      String?  @map("ocr_text")
+  ocrResult      String?  @map("ocr_result")
   aiResult     Json?    @map("ai_result")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -92,6 +100,7 @@ model Invoice {
   tenant       Tenant   @relation(fields: [tenantId], references: [id])
   ocrResults   OcrResult[]
   reconciliations Reconciliation[]
+  claudePredictions ClaudePrediction[]
 }
 
 model OcrResult {
@@ -99,7 +108,7 @@ model OcrResult {
   tenantId   String   @map("tenant_id")
   invoiceId  String?  @map("invoice_id")
   fileName   String   @map("file_name")
-  ocrText    String   @map("ocr_text")
+  ocrResult    String   @map("ocr_result")
   confidence Float?   @default(0.0)
   status     String?  @default("processing")
   createdAt  DateTime @default(now()) @map("created_at")
@@ -138,4 +147,114 @@ model JournalEntry {
 
   tenant        Tenant          @relation(fields: [tenantId], references: [id])
   reconciliations Reconciliation[]
+}
+
+// ========================================
+// Claude予測結果保存テーブル
+// ========================================
+model ClaudePrediction {
+  id                  String    @id @default(cuid())
+  tenantId            String    @map("tenant_id")
+  invoiceId           String?   @map("invoice_id")
+  
+  // 入力データ（OCRから取得した情報）
+  inputVendor         String    @map("input_vendor")         // OCR認識の取引先名
+  inputDescription    String    @map("input_description")    // 摘要
+  inputAmount         Float     @map("input_amount")         // 金額
+  inputDirection      String    @map("input_direction")      // 取引方向（income/expense）
+  
+  // Claude予測結果
+  predictedAccount    String    @map("predicted_account")    // 予測された勘定科目
+  accountConfidence   Float     @map("account_confidence")   // 勘定科目の信頼度
+  reasoning           String?   @map("reasoning")            // 判断理由
+  
+  // 取引先マスタ照合結果
+  matchedVendorId     String?   @map("matched_vendor_id")    // 照合された取引先ID
+  matchedVendorCode   String?   @map("matched_vendor_code")  // 照合された取引先コード（現状はID同値）
+  matchedVendorName   String?   @map("matched_vendor_name")  // 照合された取引先正式名称
+  vendorConfidence    Float?    @map("vendor_confidence")    // 取引先照合の信頼度
+
+  // 勘定科目マスタ照合結果
+  matchedAccountId    String?   @map("matched_account_id")   // 照合された勘定科目ID（現状はcode同値）
+  matchedAccountCode  String?   @map("matched_account_code") // 照合された勘定科目コード
+  matchedAccountName  String?   @map("matched_account_name") // 照合された勘定科目名（正式名称）
+  
+  // Claude APIメタデータ
+  claudeModel         String    @map("claude_model")         // 使用したモデル名
+  tokensUsed          Int?      @map("tokens_used")          // 使用トークン数
+  rawResponse         String?   @map("raw_response") @db.Text // Claudeの生レスポンス（デバッグ用）
+  
+  // ステータスとタイムスタンプ
+  status              String    @default("completed") @map("status") // completed/failed/pending
+  errorMessage        String?   @map("error_message")        // エラーメッセージ（失敗時）
+  
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  // リレーション
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice             Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  
+  // インデックス
+  @@index([tenantId, createdAt])
+  @@index([invoiceId])
+  @@index([status])
+  @@map("claude_predictions")
+}
+
+// ========================================
+// Money Forward仕訳データ保存テーブル
+// ========================================
+model MfJournalEntry {
+  id                  String    @id @default(cuid())
+  tenantId            String    @map("tenant_id")
+  claudePredictionId  String?   @map("claude_prediction_id") // 関連するClaude予測ID
+  
+  // Money Forwardフォーマットフィールド
+  transactionDate     DateTime  @map("transaction_date")     // 取引日
+  transactionType     String    @map("transaction_type")     // 取引区分（収入/支出）
+  
+  // 金額（入金・出金を分けて保存）
+  incomeAmount        Float?    @map("income_amount")        // 入金額
+  expenseAmount       Float?    @map("expense_amount")       // 出金額
+  
+  // 勘定科目と取引先
+  accountSubject      String    @map("account_subject")      // 勘定科目
+  matchedAccountId    String?   @map("matched_account_id")   // 勘定科目ID（現状はcode同値）
+  matchedAccountCode  String?   @map("matched_account_code") // 勘定科目コード
+  vendor              String?   @map("vendor")               // 取引先
+  matchedVendorId     String?   @map("matched_vendor_id")    // 取引先ID
+  matchedVendorCode   String?   @map("matched_vendor_code")  // 取引先コード（現状はID同値）
+  description         String?   @map("description")          // 摘要
+  
+  // その他MFフィールド
+  accountBook         String?   @map("account_book")         // 口座（決済口座）
+  taxCategory         String?   @map("tax_category")         // 税区分
+  memo                String?   @map("memo")                 // メモ
+  tagNames            String?   @map("tag_names")            // タグ（カンマ区切り）
+  
+  // エクスポート・インポート管理
+  csvExported         Boolean   @default(false) @map("csv_exported") // CSV出力済みフラグ
+  csvExportedAt       DateTime? @map("csv_exported_at")      // CSV出力日時
+  mfImported          Boolean   @default(false) @map("mf_imported")  // MFインポート済みフラグ
+  mfImportedAt        DateTime? @map("mf_imported_at")       // MFインポート日時
+  mfJournalId         String?   @map("mf_journal_id")        // MF側の仕訳ID（インポート後に取得）
+  
+  // ステータス
+  status              String    @default("draft") @map("status") // draft/ready/exported/imported/error
+  errorMessage        String?   @map("error_message")        // エラーメッセージ
+  
+  // タイムスタンプ
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  // リレーション
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // インデックス
+  @@index([tenantId, transactionDate])
+  @@index([status])
+  @@index([csvExported])
+  @@index([mfImported])
+  @@map("mf_journal_entries")
 }

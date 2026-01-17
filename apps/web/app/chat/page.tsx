@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import config, { ROUTES } from '@/config'
 import { Button } from '../components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
@@ -12,6 +12,7 @@ import ChatInterface from '@/components/chat-interface'
 export default function ChatPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
+  const hasInitialized = useRef(false)
 
   useEffect(() => {
     if (status === 'loading') return
@@ -40,9 +41,11 @@ export default function ChatPage() {
     }
   }, [messages])
 
-  // 初回メッセージをバックエンドから取得
+  // 初回メッセージをバックエンドから取得（1回のみ）
   useEffect(() => {
     if (!session) return
+    // 既に初期化済み、またはメッセージがある場合はスキップ
+    if (hasInitialized.current || messages.length > 0) return
 
     async function fetchInit() {
       try {
@@ -61,13 +64,14 @@ export default function ChatPage() {
           suggestions: []
         }
         setMessages([welcome])
+        hasInitialized.current = true // 初期化完了をマーク
       } catch (err) {
         console.error('Failed to load initial chat', err)
       }
     }
 
     fetchInit()
-  }, [session])
+  }, [session]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ローディング中
   if (status === 'loading') {
@@ -113,8 +117,21 @@ export default function ChatPage() {
       {/* 説明セクション */}
       <div className="mb-6">
         <Card className="shadow-sm">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg">ドキュメント分析チャット</CardTitle>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => {
+                if (confirm('チャット履歴をクリアしてもよろしいですか？')) {
+                  setMessages([])
+                  hasInitialized.current = false
+                  localStorage.removeItem('chat_messages')
+                }
+              }}
+            >
+              履歴をクリア
+            </Button>
           </CardHeader>
           <CardContent>
             <p className="text-gray-600">
