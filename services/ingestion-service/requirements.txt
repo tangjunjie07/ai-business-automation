@@ -7,6 +7,8 @@ azure-ai-formrecognizer
 langchain
 langchain-openai
 openai
+anthropic
+prisma
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.12.1
@@ -41,7 +43,7 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 urllib3==2.6.3
 uvicorn==0.40.0
-uvloop==0.22.1
+uvloop==0.22.1; platform_system != "Windows"
 watchfiles==1.1.1
 websockets==15.0.1
 pytest==7.4.2

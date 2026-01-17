@@ -8,17 +8,52 @@ async def create_invoice(conn: Any, tenant_id: str) -> Optional[str]:
     new_id = str(uuid.uuid4())
     row = await conn.fetchrow(
         '''
-        INSERT INTO "Invoice" (id, tenant_id, file_url, status, created_at)
-        VALUES ($1, $2, $3, $4, NOW())
+        INSERT INTO "Invoice" (id, tenant_id, file_url, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, NOW(), NOW())
         RETURNING id
-        ''' ,
+        ''',
         new_id, tenant_id, "", "processing"
     )
+
     return str(row["id"]) if row else None
 
 
 async def update_file_url(conn: Any, invoice_id: str, file_url: str) -> None:
     await conn.execute('UPDATE "Invoice" SET file_url = $1 WHERE id = $2', file_url, invoice_id)
+
+# ========================================
+# Master照合 + DB保存機能（ANTHROPIC_API_KEYなしでテスト用）
+# ========================================
+#TODO 削除予定
+async def ensure_invoice(
+    conn: Any,
+    tenant_id: str,
+    invoice_id: str,
+    file_url: str = "",
+    status: str = "processing",
+) -> bool:
+    """Ensure an Invoice row exists for the given id.
+
+    Returns True if the row exists (or was created), False if it exists but under a different tenant.
+    """
+    row = await conn.fetchrow('SELECT tenant_id FROM "Invoice" WHERE id = $1', invoice_id)
+    if row:
+        return str(row.get('tenant_id')) == str(tenant_id)
+
+    await conn.execute(
+        '''
+        INSERT INTO "Invoice" (id, tenant_id, file_url, status, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, NOW(), NOW())
+        ON CONFLICT (id) DO NOTHING
+        ''',
+        invoice_id,
+        tenant_id,
+        file_url,
+        status,
+    )
+
+    row2 = await conn.fetchrow('SELECT tenant_id FROM "Invoice" WHERE id = $1', invoice_id)
+    return bool(row2) and str(row2.get('tenant_id')) == str(tenant_id)
 
 
 async def mark_invoice_failed(conn: Any, invoice_id: str, reason: str) -> None:
