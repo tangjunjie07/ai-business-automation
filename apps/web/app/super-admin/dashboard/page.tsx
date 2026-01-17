@@ -86,58 +86,58 @@ export default function SuperAdminDashboard() {
     }
   }
 
+  import ThreeColLayout from '../../components/three-col-layout'
+
   return (
-    <div className="max-w-6xl mx-auto py-8">
-        <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">システム管理ダッシュボード</h1>
-          <p className="text-sm text-[color:var(--muted)]">全テナントとユーザーの管理</p>
-        </div>
-        <div />
-      </div>
-
-      {/* 統計カード */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        <Card className="p-4">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[color:var(--muted)]">テナント数</p>
-                <p className="text-2xl font-semibold">{tenants.length}</p>
-              </div>
-              <div className="text-[color:var(--brand)] font-bold text-xl">🏢</div>
+    <ThreeColLayout
+      left={(
+        <>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-bold">システム管理ダッシュボード</h1>
+              <p className="text-sm text-[color:var(--muted)]">全テナントとユーザーの管理</p>
             </div>
-          </CardContent>
-        </Card>
+            <div />
+          </div>
 
-        <Card className="p-4">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[color:var(--muted)]">システム管理者</p>
-                <p className="text-2xl font-semibold">—</p>
-              </div>
-              <div className="text-[color:var(--brand)] font-bold text-xl">🔑</div>
-            </div>
-          </CardContent>
-        </Card>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+            <Card className="p-4">
+              <CardContent className="p-0">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-[color:var(--muted)]">テナント数</p>
+                    <p className="text-2xl font-semibold">{tenants.length}</p>
+                  </div>
+                  <div className="text-[color:var(--brand)] font-bold text-xl">🏢</div>
+                </div>
+              </CardContent>
+            </Card>
 
-        <Card className="p-4">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[color:var(--muted)]">全ユーザー</p>
-                <p className="text-2xl font-semibold">{users.length}</p>
-              </div>
-              <div className="text-[color:var(--brand)] font-bold text-xl">👥</div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Card className="p-4">
+              <CardContent className="p-0">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-[color:var(--muted)]">システム管理者</p>
+                    <p className="text-2xl font-semibold">—</p>
+                  </div>
+                  <div className="text-[color:var(--brand)] font-bold text-xl">🔑</div>
+                </div>
+              </CardContent>
+            </Card>
 
-      {/* メイン: 左フォーム / 右一覧 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1">
+            <Card className="p-4">
+              <CardContent className="p-0">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-[color:var(--muted)]">全ユーザー</p>
+                    <p className="text-2xl font-semibold">{users.length}</p>
+                  </div>
+                  <div className="text-[color:var(--brand)] font-bold text-xl">👥</div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card>
             <CardHeader>
               <CardTitle>テナント作成</CardTitle>
@@ -167,48 +167,48 @@ export default function SuperAdminDashboard() {
               </form>
             </CardContent>
           </Card>
-        </div>
+        </>
+      )}
+    >
+      <div className="lg:col-span-2">
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>テナント一覧</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y">
+              {tenants.map(t => (
+                <li key={t.id} className="py-3 flex items-center justify-between">
+                  <div>
+                    <div className="font-medium">{t.name} <span className="text-[color:var(--muted)]">({t.code})</span></div>
+                    <div className="text-sm text-[color:var(--muted)]">管理者: {t.adminEmail}</div>
+                  </div>
+                  <div className="text-sm text-[color:var(--muted)]">ID: {t.id}</div>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
 
-        <div className="lg:col-span-2">
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>テナント一覧</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="divide-y">
-                {tenants.map(t => (
-                  <li key={t.id} className="py-3 flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">{t.name} <span className="text-[color:var(--muted)]">({t.code})</span></div>
-                      <div className="text-sm text-[color:var(--muted)]">管理者: {t.adminEmail}</div>
-                    </div>
-                    <div className="text-sm text-[color:var(--muted)]">ID: {t.id}</div>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>全ユーザー一覧</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="divide-y">
-                {users.map(u => (
-                  <li key={u.id} className="py-3 flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">{u.name || u.email}</div>
-                      <div className="text-sm text-[color:var(--muted)]">{u.email} — {u.role}</div>
-                    </div>
-                    <div className="text-sm text-[color:var(--muted)]">{u.tenantCode || 'システム管理者'}</div>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>全ユーザー一覧</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y">
+              {users.map(u => (
+                <li key={u.id} className="py-3 flex items-center justify-between">
+                  <div>
+                    <div className="font-medium">{u.name || u.email}</div>
+                    <div className="text-sm text-[color:var(--muted)]">{u.email} — {u.role}</div>
+                  </div>
+                  <div className="text-sm text-[color:var(--muted)]">{u.tenantCode || 'システム管理者'}</div>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
       </div>
-    </div>
+    </ThreeColLayout>
   )
 }

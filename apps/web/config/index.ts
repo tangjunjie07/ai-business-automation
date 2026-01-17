@@ -36,9 +36,22 @@ export const featureFlags = {
   enableNewOCR: get('FEATURE_ENABLE_NEW_OCR', 'false') === 'true',
 }
 
+// NOTE: NEXT_PUBLIC_API_BASE_URL and NEXT_PUBLIC_WS_BASE_URL are no longer used.
+// Keep the `network` object for compatibility; callers should fallback to
+// same-origin or explicit runtime values instead of relying on these envs.
 export const network = {
-  apiBase: get('NEXT_PUBLIC_API_BASE_URL', 'http://localhost:8000'),
-  wsBase: get('NEXT_PUBLIC_WS_BASE_URL', 'ws://localhost:8000'),
+  apiBase: '',
+  wsBase: '',
+}
+
+export const dify = {
+  apiBase: get('DIFY_API_BASE', 'https://api.dify.ai'),
+}
+
+// Server-only accessor for secret key. DO NOT call from client-side code.
+export function getDifyKey(): string {
+  if (typeof window !== 'undefined') throw new Error('getDifyKey must be used server-side')
+  return (get('DIFY_API_KEY', '') as string)
 }
 
 export const ROUTES = {

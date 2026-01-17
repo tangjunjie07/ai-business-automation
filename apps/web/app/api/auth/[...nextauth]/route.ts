@@ -110,7 +110,12 @@ export const authOptions = {
     })
   ],
   session: {
-    strategy: 'jwt' as const
+    strategy: 'jwt' as const,
+    // Session lifetime in seconds (default: 7 days). Can be overridden with env var SESSION_MAX_AGE.
+    maxAge: Number(process.env.SESSION_MAX_AGE || String(60 * 60 * 24 * 7)),
+    // How often to update the session in the database (seconds). For JWT strategy this controls
+    // how frequently the session token is updated. Default: 1 hour.
+    updateAge: Number(process.env.SESSION_UPDATE_AGE || String(60 * 60)),
   },
   callbacks: {
     async jwt({ token, user }: { token: JWT; user?: any }) {

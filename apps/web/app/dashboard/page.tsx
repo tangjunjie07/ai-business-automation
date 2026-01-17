@@ -18,6 +18,8 @@ interface User {
 
 // Chat interfaces moved to /chat page
 
+import ThreeColLayout from '../components/three-col-layout'
+
 export default function Dashboard() {
   const { data: session } = useSession()
   const [users, setUsers] = useState<User[]>([])
@@ -90,121 +92,121 @@ export default function Dashboard() {
   // File handling functions - REMOVED: Moved to /chat page
 
   return (
-    <div className="max-w-6xl mx-auto py-8">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">ダッシュボード</h1>
-          <p className="text-sm text-[color:var(--muted)]">テナント: {session?.user?.tenantName || '—'}</p>
-        </div>
-        <div className="flex items-center gap-3" />
-      </div>
-
-      {/* 上段統計カード */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        <Card className="p-4">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[color:var(--muted)]">アップロード済みドキュメント</p>
-                <p className="text-2xl font-semibold">{/* TODO: 総数取得 */}—</p>
-              </div>
-              <div className="text-[color:var(--brand)] font-bold text-xl">📄</div>
+    <ThreeColLayout
+      left={(
+        <>
+          <div className="flex justify-between items-center mb-6">
+            <div>
+              <h1 className="text-3xl font-bold">ダッシュボード</h1>
+              <p className="text-sm text-[color:var(--muted)]">テナント: {session?.user?.tenantName || '—'}</p>
             </div>
-          </CardContent>
-        </Card>
+            <div className="flex items-center gap-3" />
+          </div>
 
-        <Card className="p-4">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[color:var(--muted)]">解析ジョブ（進行中）</p>
-                <p className="text-2xl font-semibold">—</p>
-              </div>
-              <div className="text-[color:var(--brand)] font-bold text-xl">⚙️</div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="p-4">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[color:var(--muted)]">アクティブユーザー</p>
-                <p className="text-2xl font-semibold">{users.length}</p>
-              </div>
-              <div className="text-[color:var(--brand)] font-bold text-xl">👥</div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* メイン2カラム: フォーム（左） / ユーザー一覧（右） */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1">
-          {session?.user?.role === ROLES.ADMIN && (
-            <Card>
-              <CardHeader>
-                <CardTitle>ユーザー作成</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleCreateUser} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+            <Card className="p-4">
+              <CardContent className="p-0">
+                <div className="flex items-center justify-between">
                   <div>
-                    <Label>名前</Label>
-                    <Input value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} required />
+                    <p className="text-sm text-[color:var(--muted)]">アップロード済みドキュメント</p>
+                    <p className="text-2xl font-semibold">—</p>
                   </div>
-                  <div>
-                    <Label>メール</Label>
-                    <Input type="email" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} required />
-                  </div>
-                  <div>
-                    <Label>パスワード</Label>
-                    <Input type="password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} required />
-                  </div>
-                  <div>
-                    <Button type="submit" disabled={loading} className="w-full">
-                      {loading ? '作成中...' : 'ユーザー作成'}
-                    </Button>
-                    {error && <p className="text-red-500 mt-2">{error}</p>}
-                  </div>
-                </form>
+                  <div className="text-[color:var(--brand)] font-bold text-xl">📄</div>
+                </div>
               </CardContent>
             </Card>
-          )}
 
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>AIチャット</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-[color:var(--muted)] mb-4">ドキュメントとの対話や解析結果の照会はこちら。</p>
-                <Button asChild className="w-full">
-                <a href={ROUTES.CHAT}>AIチャットページへ移動</a>
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+            <Card className="p-4">
+              <CardContent className="p-0">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-[color:var(--muted)]">解析ジョブ（進行中）</p>
+                    <p className="text-2xl font-semibold">—</p>
+                  </div>
+                  <div className="text-[color:var(--brand)] font-bold text-xl">⚙️</div>
+                </div>
+              </CardContent>
+            </Card>
 
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>ユーザー一覧</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="divide-y">
-                {users.map(u => (
-                  <li key={u.id} className="py-3 flex items-center justify-between">
+            <Card className="p-4">
+              <CardContent className="p-0">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-[color:var(--muted)]">アクティブユーザー</p>
+                    <p className="text-2xl font-semibold">{users.length}</p>
+                  </div>
+                  <div className="text-[color:var(--brand)] font-bold text-xl">👥</div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-6">
+            {session?.user?.role === ROLES.ADMIN && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>ユーザー作成</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleCreateUser} className="space-y-4">
                     <div>
-                      <div className="font-medium">{u.name || u.email}</div>
-                      <div className="text-sm text-[color:var(--muted)]">{u.email} — {u.role}</div>
+                      <Label>名前</Label>
+                      <Input value={newUser.name} onChange={e => setNewUser({ ...newUser, name: e.target.value })} required />
                     </div>
-                    <div className="text-sm text-[color:var(--muted)]">{u.id}</div>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        </div>
+                    <div>
+                      <Label>メール</Label>
+                      <Input type="email" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} required />
+                    </div>
+                    <div>
+                      <Label>パスワード</Label>
+                      <Input type="password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} required />
+                    </div>
+                    <div>
+                      <Button type="submit" disabled={loading} className="w-full">
+                        {loading ? '作成中...' : 'ユーザー作成'}
+                      </Button>
+                      {error && <p className="text-red-500 mt-2">{error}</p>}
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+            )}
+
+            <Card>
+              <CardHeader>
+                <CardTitle>AIチャット</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-[color:var(--muted)] mb-4">ドキュメントとの対話や解析結果の照会はこちら。</p>
+                <Button asChild className="w-full">
+                  <a href={ROUTES.CHAT}>AIチャットページへ移動</a>
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
+    >
+      <div className="lg:col-span-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>ユーザー一覧</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y">
+              {users.map(u => (
+                <li key={u.id} className="py-3 flex items-center justify-between">
+                  <div>
+                    <div className="font-medium">{u.name || u.email}</div>
+                    <div className="text-sm text-[color:var(--muted)]">{u.email} — {u.role}</div>
+                  </div>
+                  <div className="text-sm text-[color:var(--muted)]">{u.id}</div>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
       </div>
-    </div>
+    </ThreeColLayout>
   )
 }
