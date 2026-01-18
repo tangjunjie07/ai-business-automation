@@ -20,7 +20,8 @@
    - フロントエンド（`apps/web/app` 以下のクライアントコード）は外部 Dify エンドポイントに直接 `fetch` や `axios` 等でアクセスしてはなりません。
    - Dify と連携する処理はすべて Next.js の Route（サーバーサイド API）を介して実施してください。
    - すべての Dify 用 Route は必ず `apps/web/app/api/dify` 配下に設置してください。
-
+   - Dify APIを実装・利用する際は、必ず `docs/DifyAPI.md` のAPIドキュメントを参照し、仕様通りに実装してください。
+   - フロントエンドからバックエンドAPI（/api/dify/xxx）を呼び出す際は、必ず `x-tenant-id` ヘッダーを指定すること（テナント分離・RLS制約のため必須）。
 3. 環境変数 `process.env.DIFY_API_BASE`（および `NEXT_PUBLIC_DIFY_API_BASE` 等のクライアント公開変数）の直接使用は禁止。
    - Dify ベース URL / API キーは `apps/web/config/index.ts` 経由で読み込むユーティリティで解決してください。
    - フロントエンドで `process.env.NEXT_PUBLIC_DIFY_API_BASE` を参照することは禁止です（ビルド時にキーがバンドルされます）。

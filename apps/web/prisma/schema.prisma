@@ -55,6 +55,7 @@ model User {
   tenant        Tenant?   @relation(fields: [tenantId], references: [id])
   accounts      Account[]
   sessions      Session[]
+  chatSessions  ChatSession[]
 }
 
 model VerificationToken {
@@ -257,4 +258,24 @@ model MfJournalEntry {
   @@index([csvExported])
   @@index([mfImported])
   @@map("mf_journal_entries")
+}
+
+// ========================================
+// Dify連携用チャットセッション管理テーブル
+// ========================================
+model ChatSession {
+  id         String   @id @default(uuid()) // 自社システム内でのセッション識別子
+  userId     String   // ユーザーID（誰の会話か）
+  difyId     String   // Dify側のconversation_id
+  title      String?  // サイドバーに表示する名称（任意に変更可能）
+  isPinned   Boolean  @default(false) // ピン留め状態
+  updatedAt  DateTime @updatedAt // 最終発言日時
+  createdAt  DateTime @default(now())
+
+  // リレーション
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+  @@index([difyId])
+  @@map("chat_sessions")
 }

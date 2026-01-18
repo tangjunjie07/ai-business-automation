@@ -115,3 +115,15 @@ html[data-theme="dark"] {
   pointer-events: none;
 }
 
+/* Divider / token-compatible helpers
+   These provide small utility classes used across the app like
+   `border-divider-regular`, `bg-divider-regular`, `text-divider-deep`.
+   They prefer the Dify theme variables when available, with sensible
+   fallbacks so the border doesn't render as pure black.
+*/
+.border-divider-regular { border-color: var(--color-divider-regular, rgba(16,24,40,0.08)); }
+.bg-divider-regular { background-color: var(--color-divider-regular, rgba(16,24,40,0.08)); }
+.text-divider-deep { color: var(--color-divider-deep, rgba(16,24,40,0.14)); }
+.bg-divider-subtle { background-color: var(--color-divider-subtle, rgba(16,24,40,0.04)); }
+.border-components-panel-border { border-color: var(--color-divider-regular, rgba(16,24,40,0.08)); }
+

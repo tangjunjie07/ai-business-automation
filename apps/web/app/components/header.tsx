@@ -9,10 +9,10 @@ import { ROUTES, ROLES, isNormalUser } from '@/config'
 
 type RoleValue = (typeof ROLES)[keyof typeof ROLES]
 
-export default function Header() {
+function Header() {
   const pathname = usePathname() || '/'
   const [open, setOpen] = useState(false)
-  const { data: session } = useSession()
+  const { data: session, status } = useSession()
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement | null>(null)
 
@@ -31,6 +31,7 @@ export default function Header() {
     return () => document.removeEventListener('click', onClick)
   }, [])
 
+  if (status === 'loading') return null;
   return (
     <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <div className="flex items-center gap-4">
@@ -165,3 +166,5 @@ export default function Header() {
     </div>
   )
 }
+
+export default Header;

@@ -5,7 +5,7 @@ import { useRef, useState } from 'react'
 type Message = { role: 'user' | 'assistant'; content: string }
 
 /**
- * Minimal hook skeleton to handle SSE-like streaming responses from /api/dify/chat.
+ * Minimal hook skeleton to handle SSE-like streaming responses from /api/dify/chat-messages.
  * - `send` accepts either a JSON payload or a FormData (for files).
  * - The hook exposes `messages`, `isStreaming`, `send`, and `abort`.
  *
@@ -39,7 +39,7 @@ export default function useDifySSE() {
       if (opts?.tenantId) headers['X-Tenant-ID'] = opts.tenantId
       if (opts?.userId) headers['X-USER-ID'] = opts.userId
 
-      const res = await fetch('/api/dify/chat', { method: 'POST', headers, body, signal: abortRef.current.signal })
+      const res = await fetch('/api/dify/chat-messages', { method: 'POST', headers, body, signal: abortRef.current.signal })
       if (!res.ok) throw new Error(`Upstream error: ${res.status}`)
 
       if (!res.body) return

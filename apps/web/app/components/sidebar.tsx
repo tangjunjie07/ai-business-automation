@@ -1,42 +1,89 @@
   "use client";
 import React, { useEffect, useState, useRef } from 'react';
+// ...existing code...
 import { RenameModal } from '../components/rename-modal';
 // Dify風テーマスイッチャーをインライン実装
 import { Trash, Edit } from 'lucide-react'
 
-export function Sidebar({ onSelect, onClose, onPin, onRename, onDelete }: { onSelect?: (item: string) => void; onClose?: () => void; onPin?: (id: string) => void; onRename?: (id: string) => void; onDelete?: (id: string) => void }) {
+
+// sessions: {difyId, title, isPinned, updatedAt}[]
+export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onNewChat, messages = [] }: { sessions?: any[]; onSelect?: (id: string) => void; onClose?: () => void; onPin?: (id: string) => void; onDelete?: (id: string) => void; onNewChat?: () => void; messages?: any[] }) {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const [renameModal, setRenameModal] = useState<{ show: boolean; id: string | null; name: string }>({ show: false, id: null, name: '' });
   const [renameLoading, setRenameLoading] = useState(false);
 
-  const [historyItems, setHistoryItems] = useState([
-    { id: 'new', title: '新規チャット', active: true },
-    { id: 'init', title: 'Initiating Conversation' },
-    { id: 'receipt', title: '領収書について話す' },
-  ]);
+  // sessionsからピン留め・非ピン留め分離
+  const pinnedItems = sessions.filter(i => i.isPinned);
+  const unpinnedItems = sessions.filter(i => !i.isPinned);
 
-  const pinnedItems = historyItems.filter(i => pinnedIds.includes(i.id));
-  const unpinnedItems = historyItems.filter(i => !pinnedIds.includes(i.id));
-
-  function togglePinLocal(id: string) {
-    setPinnedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-    onPin?.(id);
+  async function togglePinLocal(id: string, currentPinned: boolean) {
+    if (!window.confirm(currentPinned ? 'ピン留めを解除しますか？' : 'この会話をピン留めしますか？')) return;
+    try {
+      // x-tenant-idはwindow.sessionから取得
+      const tenantId = (window as any).session?.user?.tenantId || '';
+      await fetch(`/api/dify/chat-sessions/${id}/pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({ isPinned: !currentPinned }),
+      });
+      window.location.reload();
+    } catch {}
+    if (onPin) onPin(id);
   }
 
   function handleRename(id: string) {
-    const item = historyItems.find(i => i.id === id);
+    const item = sessions.find(i => i.difyId === id);
     setRenameModal({ show: true, id, name: item?.title || '' });
   }
 
-  function handleRenameSave(newName: string) {
+  async function handleRenameSave(newName: string) {
     if (!renameModal.id) return;
     setRenameLoading(true);
-    setTimeout(() => { // 実際はAPI呼び出し等に置き換え
-      setHistoryItems(items => items.map(i => i.id === renameModal.id ? { ...i, title: newName } : i));
+    try {
+      // x-tenant-idはwindow.sessionから取得（本来はpropsで渡すのが理想）
+      const tenantId = (window as any).session?.user?.tenantId || '';
+      await fetch(`/api/dify/chat-sessions/${renameModal.id}/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId },
+        body: JSON.stringify({ title: newName }),
+      });
       setRenameModal({ show: false, id: null, name: '' });
+      window.location.reload();
+    } finally {
       setRenameLoading(false);
-    }, 600);
+    }
+  }
+
+  // 履歴削除時はAPI Route経由で x-tenant-id ヘッダー必須
+  async function handleDelete(id: string) {
+    if (!window.confirm('この会話を削除します。よろしいですか？')) return;
+    try {
+      const tenantId = (window as any).session?.user?.tenantId || '';
+      await fetch(`/api/dify/conversations/${id}`, {
+        method: 'DELETE',
+        headers: { 'x-tenant-id': tenantId },
+      });
+      window.location.reload();
+    } catch (e) {}
+    if (onDelete) onDelete(id);
+  }
+
+  async function handleRenameSave(newName: string) {
+    if (!renameModal.id) return;
+    setRenameLoading(true);
+    try {
+      await fetch(`/api/dify/chat-sessions/${renameModal.id}/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newName }),
+      });
+      setRenameModal({ show: false, id: null, name: '' });
+      // 親でsessions再取得を推奨（ここではwindow.location.reloadで暫定対応）
+      window.location.reload();
+    } finally {
+      setRenameLoading(false);
+    }
   }
 
   return (
@@ -56,7 +103,15 @@ export function Sidebar({ onSelect, onClose, onPin, onRename, onDelete }: { onSe
 
       {/* new chat button */}
       <div className="shrink-0 px-3 py-4">
-        <button type="button" className="btn disabled:btn-disabled btn-secondary-accent btn-medium w-full justify-center flex items-center gap-2" disabled>
+        <button
+          type="button"
+          className="btn btn-secondary-accent btn-medium w-full justify-center flex items-center gap-2"
+          onClick={() => {
+            // 新規チャットボタン押下時はonNewChatコールバックを直接呼ぶ
+            onNewChat?.();
+          }}
+          aria-label="new-chat-sidebar"
+        >
           <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" className="remixicon h-4 w-4"><path d="M16.7574 2.99678L14.7574 4.99678H5V18.9968H19V9.23943L21 7.23943V19.9968C21 20.5491 20.5523 20.9968 20 20.9968H4C3.44772 20.9968 3 20.5491 3 19.9968V3.99678C3 3.4445 3.44772 2.99678 4 2.99678H16.7574ZM20.4853 2.09729L21.8995 3.5115L12.7071 12.7039L11.2954 12.7064L11.2929 11.2897L20.4853 2.09729Z"></path></svg>
           <span className="whitespace-nowrap">新規チャット</span>
         </button>
@@ -70,7 +125,7 @@ export function Sidebar({ onSelect, onClose, onPin, onRename, onDelete }: { onSe
               <div className="system-xs-medium text-text-tertiary mb-2">ピン留め済み</div>
               <div className="space-y-0.5">
                 {pinnedItems.map(item => (
-                  <div key={item.id} className={`system-sm-medium group relative flex cursor-pointer rounded-lg p-1 pl-3 ${item.active ? 'bg-state-accent-active text-text-accent' : 'text-components-menu-item-text'} hover:bg-state-base-hover`} onClick={() => onSelect?.(item.title)}>
+                  <div key={item.difyId} className={`system-sm-medium group relative flex cursor-pointer rounded-lg p-1 pl-3 hover:bg-state-base-hover`} onClick={() => onSelect?.(item.difyId)}>
                     <div className="grow truncate p-1 pl-0 group-hover:text-[color:var(--brand)]" title={item.title}>{item.title}</div>
                     <div className="shrink-0">
                       {item.id !== 'new' && (
@@ -80,7 +135,7 @@ export function Sidebar({ onSelect, onClose, onPin, onRename, onDelete }: { onSe
                           </button>
                           {menuOpenId === item.id && (
                             <div className="absolute right-3 top-full mt-2 w-36 rounded-xl border-[0.5px] border-components-panel-border bg-chat-bubble-bg p-1 shadow-lg z-60" onClick={(e) => e.stopPropagation()}>
-                              <div className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-text-secondary hover:bg-state-base-hover" onClick={() => { togglePinLocal(item.id); setMenuOpenId(null); }}>
+                              <div className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-text-secondary hover:bg-state-base-hover" onClick={() => { togglePinLocal(item.difyId, item.isPinned); setMenuOpenId(null); }}>
                                 <svg className="h-3 w-3 shrink-0 text-text-tertiary" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2L8 4H5V8L2 11V13H5L8 16V20H10V16L13 13V9H10L7 6V4H10L6 0Z"/></svg>
                                 <span className="truncate">{pinnedIds.includes(item.id) ? 'ピン留め解除' : 'ピン留め'}</span>
                               </div>
@@ -88,7 +143,7 @@ export function Sidebar({ onSelect, onClose, onPin, onRename, onDelete }: { onSe
                                 <Edit className="h-4 w-4 shrink-0 text-text-tertiary" />
                                 <span className="truncate">名前変更</span>
                               </div>
-                              <div className="system-sm-regular group flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-text-secondary hover:bg-state-destructive-hover hover:text-text-destructive" onClick={() => { onDelete?.(item.id); setMenuOpenId(null); }}>
+                              <div className="system-sm-regular group flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-text-secondary hover:bg-state-destructive-hover hover:text-text-destructive" onClick={() => { handleDelete(item.id); setMenuOpenId(null); }}>
                                 <Trash className="h-4 w-4 shrink-0 text-text-tertiary group-hover:text-text-destructive" />
                                 <span className="truncate">削除</span>
                               </div>
@@ -106,8 +161,8 @@ export function Sidebar({ onSelect, onClose, onPin, onRename, onDelete }: { onSe
             <div className="system-xs-medium text-text-tertiary mb-2">チャット</div>
           )}
 
-          {unpinnedItems.map(item => (
-            <div key={item.id} className={`system-sm-medium group relative flex cursor-pointer rounded-lg p-1 pl-3 ${item.active ? 'bg-state-accent-active text-text-accent' : 'text-components-menu-item-text'} hover:bg-state-base-hover`} onClick={() => onSelect?.(item.title)}>
+          {unpinnedItems.map((item, idx) => (
+            <div key={item.difyId || `new-${idx}`} className={`system-sm-medium group relative flex cursor-pointer rounded-lg p-1 pl-3 hover:bg-state-base-hover`} onClick={() => onSelect?.(item.difyId)}>
               <div className="grow truncate p-1 pl-0 group-hover:text-[color:var(--brand)]" title={item.title}>{item.title}</div>
               <div className="shrink-0">
                 {item.id !== 'new' && (
@@ -117,7 +172,7 @@ export function Sidebar({ onSelect, onClose, onPin, onRename, onDelete }: { onSe
                     </button>
                     {menuOpenId === item.id && (
                       <div className="absolute right-3 top-full mt-2 w-36 rounded-xl border-[0.5px] border-components-panel-border bg-chat-bubble-bg p-1 shadow-lg z-60" onClick={(e) => e.stopPropagation()}>
-                        <div className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-text-secondary hover:bg-state-base-hover" onClick={() => { togglePinLocal(item.id); setMenuOpenId(null); }}>
+                        <div className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-text-secondary hover:bg-state-base-hover" onClick={() => { togglePinLocal(item.difyId, item.isPinned); setMenuOpenId(null); }}>
                           {pinnedIds.includes(item.id) ? (
                             <svg className="h-4 w-4 shrink-0 text-text-tertiary" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2L8 4H5V8L2 11V13H5L8 16V20H10V16L13 13V9H10L7 6V4H10L6 0Z"/></svg>
                           ) : (
@@ -152,7 +207,7 @@ export function Sidebar({ onSelect, onClose, onPin, onRename, onDelete }: { onSe
         onSave={handleRenameSave}
       />
       {/* footer: theme controls + powered-by (sticky bottom so it's always visible) */}
-      <div className="absolute bottom-0 left-0 w-full flex shrink-0 items-center justify-between p-3 border-t border-components-panel-border bg-chatbot-bg z-50">
+      <div className="absolute bottom-0 left-0 w-full flex shrink-0 items-center justify-between p-3 border-t border-divider-regular bg-chatbot-bg z-50">
         <div className="inline-block w-full" data-state="closed">
           <div className="p-1">
             <div className="system-md-regular flex cursor-pointer items-center rounded-lg py-1.5 pl-3 pr-2 text-text-secondary">
