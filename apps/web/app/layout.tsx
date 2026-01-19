@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import { Providers } from '@/components/providers'
-import Link from 'next/link'
 import Header from './components/header'
 
 const geistSans = Geist({
@@ -20,27 +19,18 @@ export const metadata: Metadata = {
   description: 'AIを活用した経理・業務自動化プラットフォーム',
 }
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ja">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[color:var(--background)] text-[color:var(--foreground)]`}> 
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[color:var(--background)] dark:bg-[#18181c] text-[color:var(--foreground)] h-screen min-h-screen transition-colors duration-300`}>
         <Providers>
-          <div className="min-h-screen flex flex-col">
-            <header className="border-b bg-white/80 dark:bg-black/70 backdrop-blur-sm">
+          <div className="flex flex-col h-screen min-h-screen relative">
+            <header className="border-b bg-chatbot-bg/80 dark:bg-black/70 backdrop-blur-sm">
               <Header />
             </header>
-
-            <main className="flex-1 w-full">
-              <div className="max-w-6xl mx-auto px-4 py-6">{children}</div>
+            <main className="flex-1 w-full relative min-h-0">
+              <div className="max-w-6xl mx-auto px-4 py-6 h-full min-h-0 relative">{children}</div>
             </main>
-
-            <footer className="border-t text-xs text-gray-500 dark:text-gray-400 bg-transparent">
-              <div className="max-w-6xl mx-auto px-4 py-4">© {new Date().getFullYear()} AI業務自動化</div>
-            </footer>
           </div>
         </Providers>
       </body>

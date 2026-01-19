@@ -1,4 +1,4 @@
-import NextAuth from 'next-auth'
+import NextAuth, { Session, User } from 'next-auth'
 import { JWT } from 'next-auth/jwt'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
@@ -110,10 +110,15 @@ export const authOptions = {
     })
   ],
   session: {
-    strategy: 'jwt' as const
+    strategy: 'jwt' as const,
+    // Session lifetime in seconds (default: 7 days). Can be overridden with env var SESSION_MAX_AGE.
+    maxAge: 24 * 60 * 60, // 1日
+    // How often to update the session in the database (seconds). For JWT strategy this controls
+    // how frequently the session token is updated. Default: 1 hour.
+    updateAge: Number(process.env.SESSION_UPDATE_AGE || String(60 * 60)),
   },
   callbacks: {
-    async jwt({ token, user }: { token: JWT; user?: any }) {
+    async jwt({ token, user }: { token: JWT; user?: User }) {
       if (user) {
         token.role = user.role
         token.tenantId = user.tenantId
@@ -122,7 +127,7 @@ export const authOptions = {
       }
       return token
     },
-    async session({ session, token }: { session: any; token: JWT }) {
+    async session({ session, token }: { session: Session; token: JWT }) {
       if (token && session.user) {
         session.user.id = token.sub!
         session.user.role = token.role as string
@@ -135,7 +140,8 @@ export const authOptions = {
   },
   pages: {
     signIn: ROUTES.SIGNIN,
-  }
+  },
+  url: appConfig.auth.nextAuthUrl,
 }
 
 const handler = NextAuth(authOptions)

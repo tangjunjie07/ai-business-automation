@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { signIn } from 'next-auth/react'
+import { useState, useEffect } from 'react'
+import { signIn, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { ROUTES } from '@/config'
 import { Button } from '../../components/ui/button'
@@ -16,6 +16,11 @@ export default function SuperAdminSignIn() {
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+
+  // Force clear any existing session when opening super-admin sign-in page
+  useEffect(() => {
+    signOut({ redirect: false }).catch(() => {})
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

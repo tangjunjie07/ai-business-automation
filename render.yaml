@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: ai-business-automation-web
+    runtime: node
+    buildCommand: cd apps/web && npm ci && npx prisma generate && npm run build
+    startCommand: cd apps/web && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false # Set this in Render dashboard
+      - key: NEXTAUTH_SECRET
+        sync: false # Set this in Render dashboard
+      - key: NEXTAUTH_URL
+        sync: false # Set this in Render dashboard
+      - key: DIFY_API_BASE
+        sync: false # Set this in Render dashboard
+      - key: DIFY_API_KEY
+        sync: false # Set this in Render dashboard
+
+  - type: pserv
+    name: ai-business-automation-db
+    runtime: postgres
+    ipAllowList: [] # Only accessible from web service

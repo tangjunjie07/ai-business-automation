@@ -1,65 +1,33 @@
-# Copilot Instructions for ai-business-automation
 
-This repository contains an MVP prototype for an AI-driven accounting and
-business automation platform. The project is organized as a monorepo with
-microservices and frontend apps. These instructions explain the repository
-layout, development practices, and guidance for AI-assisted code generation.
+# Copilot運用ガイド（Webアプリ用）
+## API実装時の注意
+API実装する際は、必ず下記のAPIドキュメント（公式仕様）を事前に確認してください。
+- [docs/DifyAPI.md](../apps/web/docs/DifyAPI.md)
+このドキュメントを参照せずにAPI設計・実装・修正を行うことは禁止します。
 
-Repository structure
-- `services/ingestion-service/`: FastAPI service that handles file uploads,
-	tenant-aware middleware, and storage adapters (local/S3/Azure).
-- `sql/`: Database schema and RLS (Row-Level Security) setup scripts.
-- `scripts/`: helper scripts such as `apply_rls.py` to apply DB schema.
-- `apps/web/`, `apps/mobile/`: front-end app placeholders (Web first MVP).
-- `Docs/`: architecture, requirements, and planning documents.
+## 対象範囲
+- 本ガイドは `apps/web/` 配下のNext.js/フロントエンドアプリの開発・AI実装支援に特化しています。
 
-Development environment
-- Python: 3.11+ recommended (project uses a `.venv` in repository root).
-- Postgres: `postgres:16` in `docker-compose.yml` for local development.
-- Run services locally with the venv Python and `uvicorn` for FastAPI.
+## 開発・実装ルール
+- すべてのAI/Dify API実装は docs/AI_IMPLEMENTATION_RULES.md のルールに従うこと。
+- サーバーサイドAPI（`apps/web/app/api/dify/`）経由でDify APIを利用し、クライアントから直接Dify APIを呼ばない。
+- API実装時はリクエストバリデーション・エラーハンドリング・テナント分離（x-tenant-idヘッダー）を必ず考慮。
+- 既存のUI/UX・型・ディレクトリ構成に合わせて最小限の差分で編集する。
+- 新規ファイル追加時は簡単なREADMEと型定義を添付する。
+- DBスキーマ変更時は `apps/web/docs/DB_MIGRATION.md` の手順に従い、安全にマイグレーションを実行する。
 
-Key conventions
-- Multi-tenant isolation is enforced using PostgreSQL RLS. The FastAPI
-	middleware sets the session variable `app.current_tenant_id` for each
-	request. SQL and services must respect this mechanism.
-- `services/*/requirements.txt` should reflect the project's `.venv`
-	(`pip freeze`) to ensure reproducible installs.
-- Storage adapters implement the same interface and are configurable via
-	environment variables; default dev storage is local filesystem under
-	`/tmp/aba_files`.
+## テスト・検証
+- `npm run validate:ai-rules` でAI実装ルール違反を自動検出。
+- フロントエンドの動作確認は `apps/web/` 配下で `npm run dev` を推奨。
+- AIフロントエンド実装完了後は `npx tsc --noEmit` でTypeScriptエラーを解消すること。
 
-How Copilot should assist
-- Prefer minimal, well-scoped edits that follow existing project style.
-- When modifying DB-related code or SQL, ensure changes are idempotent and
-	compatible with RLS policies. Add migration or apply scripts when needed.
-- For API endpoints: include request validation (Pydantic models), error
-	handling, and tenant checks. Keep changes small and testable.
-- For new files or services, provide a short README, `requirements.txt`,
-	and a simple local run command.
 
-Local testing checklist
-- Start Postgres via `docker-compose up -d` and ensure `ai_business_automation_dev`
-	database exists and `DATABASE_URL` points to it.
-- Run `python scripts/apply_rls.py` using the project's venv Python to apply
-	schema and RLS policies.
-- Start the ingestion service:
+## 注意事項
+- AI実装・Dify API関連の実装ルールは必ず docs/AI_IMPLEMENTATION_RULES.md を参照し、厳守してください。
+- secretsやAPIキーは絶対にクライアントへ渡さない。
+- ルール例外が必要な場合は日本語で根拠コメントを記載し、PRで説明すること。
 
-	/Users/junjietang/Projects/ai-business-automation/.venv/bin/uvicorn app.main:app --port 8000 --host 0.0.0.0
+---
 
-- Test file upload with a tenant UUID set in `X-Tenant-ID` header and
-	verify `invoices` and `ocr_results` rows appear under that tenant.
-
-Security & best practices
-- Do not hardcode secrets — use environment variables (e.g. `DATABASE_URL`,
-	`AZURE_STORAGE_CONNECTION_STRING`, `AWS_ACCESS_KEY_ID`).
-- Keep RLS policies minimal and explicit. When adding new tables, add
-	matching RLS policies and indexes.
-
-CI guidance
-- CI should install dependencies from `services/ingestion-service/requirements.txt`,
-	run linting and a small smoke test (start service and POST a sample file).
-
-Contact / context
-- Author: project maintainer (local workspace). For ambiguous design choices,
-	prefer the simplest solution that preserves tenant isolation and testability.
+（Pythonやバックエンドサービスに関する記載は本ガイドには含めません）
 

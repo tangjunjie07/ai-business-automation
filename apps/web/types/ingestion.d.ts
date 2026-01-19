@@ -5,7 +5,7 @@ export interface InvoiceData {
   file_url?: string | null;
   // original uploaded file name
   file_name?: string | null;
-  ocr_result?: any | null;
+  ocr_result?: unknown | null;
   // AI inference result (optional, added when analysis completes)
   ai_result?: {
     totalAmount?: number;
@@ -22,7 +22,7 @@ export interface InvoiceData {
     }>;
     summary?: string;
     // allow arbitrary extra fields
-    [key: string]: any;
+    [key: string]: unknown;
   } | null;
 }
 
@@ -32,7 +32,7 @@ export interface Message {
   type: string;
   content: string;
   invoiceData?: InvoiceData | null;
-  suggestions: any[];
+  suggestions: unknown[];
 }
 
 export interface ChatResponse {

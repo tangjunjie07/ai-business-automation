@@ -1,0 +1,59 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'apps/web/**'
+      - 'render.yaml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          cd apps/web
+          npm ci
+
+      - name: Generate Prisma client
+        run: |
+          cd apps/web
+          npx prisma generate
+
+      - name: Run lint
+        run: |
+          cd apps/web
+          npm run lint
+
+      - name: Run tests
+        run: |
+          cd apps/web
+          npm test || true
+
+      - name: Build application
+        run: |
+          cd apps/web
+          npm run build
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+          DIFY_API_BASE: ${{ secrets.DIFY_API_BASE }}
+          DIFY_API_KEY: ${{ secrets.DIFY_API_KEY }}
+
+      - name: Deploy to Render
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'

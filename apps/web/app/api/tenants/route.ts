@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Tenant } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
 import bcrypt from 'bcryptjs'
@@ -27,7 +27,7 @@ function getPrisma() {
 }
 
 // GET /api/tenants - テナント一覧を取得（スーパー管理者のみ）
-export async function GET(request: NextRequest) {
+export async function GET(_: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
 
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
         return { tenant, adminUser }
       })
 
-      const { tenant, adminUser } = result as any
+      const { tenant, adminUser } = result as { tenant: Tenant; adminUser: unknown }
 
       return NextResponse.json({
         tenant: {
@@ -151,8 +151,8 @@ export async function POST(request: NextRequest) {
         },
         admin: adminUser || null
       })
-    } catch (e: any) {
-      const msg = e?.message || 'Internal server error'
+    } catch (e: unknown) {
+      const msg = (e as Error)?.message || 'Internal server error'
       if (msg.includes('already exists')) {
         return NextResponse.json({ error: msg }, { status: 400 })
       }

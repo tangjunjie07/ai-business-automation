@@ -162,6 +162,10 @@ NEXT_PUBLIC_API_BASE_URL=https://api.your-production-domain.com
 
 # データベース（Prisma）
 DATABASE_URL=postgresql://user:password@production-db-host:5432/ai_business_automation_prod
+
+# Dify API設定
+DIFY_API_BASE=https://api.dify.ai/v1
+DIFY_API_KEY=your-dify-api-key
 ```
 
 #### Next.js設定修正
@@ -181,6 +185,61 @@ const nextConfig = {
 
 export default nextConfig
 ```
+
+#### 自動デプロイ設定
+
+このプロジェクトではGitHub Actionsを使用した自動デプロイをサポートしています。
+
+##### Vercelへのデプロイ（推奨）
+
+1. [Vercel](https://vercel.com)でアカウントを作成
+2. GitHubリポジトリを接続
+3. 以下の環境変数をVercelのダッシュボードで設定：
+   - `DATABASE_URL`
+   - `NEXTAUTH_SECRET`
+   - `NEXTAUTH_URL`
+   - `DIFY_API_BASE`
+   - `DIFY_API_KEY`
+
+4. GitHub Actionsのシークレットを設定：
+   ```bash
+   # GitHubリポジトリのSettings > Secrets and variables > Actionsで設定
+   VERCEL_TOKEN=your-vercel-token
+   VERCEL_ORG_ID=your-vercel-org-id
+   VERCEL_PROJECT_ID=your-vercel-project-id
+   DATABASE_URL=your-database-url
+   NEXTAUTH_SECRET=your-nextauth-secret
+   NEXTAUTH_URL=your-nextauth-url
+   DIFY_API_BASE=your-dify-api-base
+   DIFY_API_KEY=your-dify-api-key
+   ```
+
+##### Renderへのデプロイ（代替）
+
+1. [Render](https://dashboard.render.com/)でアカウントを作成
+2. `render.yaml`ファイルが既に設定されています
+3. GitHubリポジトリを接続
+4. PostgreSQLデータベースを作成
+5. Web Serviceを作成し、以下の環境変数を設定：
+   - `DATABASE_URL`
+   - `NEXTAUTH_SECRET`
+   - `NEXTAUTH_URL`
+   - `DIFY_API_BASE`
+   - `DIFY_API_KEY`
+
+6. GitHub Actionsのシークレットを設定：
+   ```bash
+   # GitHubリポジトリのSettings > Secrets and variables > Actionsで設定
+   RENDER_API_KEY=your-render-api-key
+   RENDER_SERVICE_ID=your-render-service-id
+   DATABASE_URL=your-database-url
+   NEXTAUTH_SECRET=your-nextauth-secret
+   NEXTAUTH_URL=your-nextauth-url
+   DIFY_API_BASE=your-dify-api-base
+   DIFY_API_KEY=your-dify-api-key
+   ```
+
+デプロイワークフローは`.github/workflows/`に設定されており、mainブランチへのpushで自動デプロイされます。
 
 ### Docker Compose (本番用)
 

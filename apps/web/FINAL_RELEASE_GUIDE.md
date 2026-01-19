@@ -21,15 +21,6 @@
 - ステージング: `DATABASE_URL_STAGING`, `NEXTAUTH_URL_STAGING`, `NEXTAUTH_SECRET_STAGING`, `STORAGE_PROVIDER_STAGING`, `AWS_S3_BUCKET_STAGING`, `AWS_REGION_STAGING`, `AWS_ACCESS_KEY_ID_STAGING`, `AWS_SECRET_ACCESS_KEY_STAGING`, `INGESTION_URL_STAGING`, `SENTRY_DSN_STAGING`, `SENTRY_TRACES_SAMPLE_RATE_STAGING`, `DEPLOY_API_KEY_STAGING`
 - プロダクション: `DATABASE_URL_PROD`, `NEXTAUTH_URL_PROD`, `NEXTAUTH_SECRET_PROD`, `STORAGE_PROVIDER_PROD`, `AWS_S3_BUCKET_PROD`, `AWS_REGION_PROD`, `AWS_ACCESS_KEY_ID_PROD`, `AWS_SECRET_ACCESS_KEY_PROD`, `INGESTION_URL_PROD`, `SENTRY_DSN_PROD`, `SENTRY_TRACES_SAMPLE_RATE_PROD`, `DEPLOY_API_KEY_PROD`
 
-3) CI（GitHub Actions）運用要点
-- リポジトリに追加済みのワークフローは `/.github/workflows/ci-web.yml`。マトリクスで `profile: [staging, production]` を用い、各プロファイルで `.env.production` をSecretsから生成してビルドを行う。
-- アーティファクトをアップロードし、デプロイジョブ（`deploy-staging` / `deploy-production`）がそれぞれダウンロードしてデプロイする設計になっている。デプロイコマンドは環境依存（Kubernetes / rsync / serverless など）なので、実運用に合わせてジョブ内のプレースホルダを実コマンドに置き換えること。
-
-推奨のCIフロー（短く）
-- PR: lint → test → build (staging profile) → upload artifact
-- develop branch merge: build (staging) → upload → deploy-staging
-- main branch merge: build (production) → upload → deploy-production
-
 4) RLS とアプリ側テナント検証
 - 手順書: `apps/web/RLS_TENANT_TEST.md` を参照。主なチェック項目:
   - `X-Tenant-ID` ヘッダ経由での取得/作成の分離

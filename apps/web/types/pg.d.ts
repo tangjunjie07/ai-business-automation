@@ -4,15 +4,15 @@ declare module 'pg' {
 	export interface PoolConfig {
 		connectionString?: string
 		// allow additional props
-		[key: string]: any
+		[key: string]: unknown
 	}
 
 	export class Pool {
 		constructor(config?: PoolConfig)
-		query(text: string, params?: any[]): Promise<any>
-		connect(): Promise<any>
+		query(text: string, params?: unknown[]): Promise<unknown>
+		connect(): Promise<unknown>
 		end(): Promise<void>
 	}
 
-	export type PoolClient = any
+	export type PoolClient = unknown
 }

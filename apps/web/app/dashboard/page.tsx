@@ -18,12 +18,15 @@ interface User {
 
 // Chat interfaces moved to /chat page
 
+import ThreeColLayout from '../components/three-col-layout'
+
 export default function Dashboard() {
   const { data: session } = useSession()
   const [users, setUsers] = useState<User[]>([])
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [activeTab, setActiveTab] = useState('overview')
 
   // Chat states - REMOVED: Chat functionality moved to dedicated /chat page
 
@@ -90,58 +93,99 @@ export default function Dashboard() {
   // File handling functions - REMOVED: Moved to /chat page
 
   return (
-    <div className="max-w-6xl mx-auto py-8">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">ダッシュボード</h1>
-          <p className="text-sm text-[color:var(--muted)]">テナント: {session?.user?.tenantName || '—'}</p>
+    <ThreeColLayout left={null}>
+      <div className="h-full flex flex-col">
+        <div className="flex justify-between items-center mb-4">
+          <div>
+            <h1 className="text-3xl font-bold">ダッシュボード</h1>
+            <p className="text-sm text-[color:var(--muted)]">テナント: {session?.user?.tenantName || '—'}</p>
+          </div>
+          <div className="flex items-center gap-3" />
         </div>
-        <div className="flex items-center gap-3" />
-      </div>
 
-      {/* 上段統計カード */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        <Card className="p-4">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[color:var(--muted)]">アップロード済みドキュメント</p>
-                <p className="text-2xl font-semibold">{/* TODO: 総数取得 */}—</p>
-              </div>
-              <div className="text-[color:var(--brand)] font-bold text-xl">📄</div>
+        {/* Tabs */}
+        <div className="border-b border-[color:var(--border)] mb-6">
+          <nav className="flex space-x-8">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'overview'
+                  ? 'border-[color:var(--brand)] text-[color:var(--brand)]'
+                  : 'border-transparent text-[color:var(--muted)] hover:text-[color:var(--foreground)] hover:border-[color:var(--muted)]'
+              }`}
+            >
+              概要
+            </button>
+            {session?.user?.role === ROLES.ADMIN && (
+              <>
+                <button
+                  onClick={() => setActiveTab('create-user')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'create-user'
+                      ? 'border-[color:var(--brand)] text-[color:var(--brand)]'
+                      : 'border-transparent text-[color:var(--muted)] hover:text-[color:var(--foreground)] hover:border-[color:var(--muted)]'
+                  }`}
+                >
+                  ユーザー作成
+                </button>
+                <button
+                  onClick={() => setActiveTab('user-list')}
+                  className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                    activeTab === 'user-list'
+                      ? 'border-[color:var(--brand)] text-[color:var(--brand)]'
+                      : 'border-transparent text-[color:var(--muted)] hover:text-[color:var(--foreground)] hover:border-[color:var(--muted)]'
+                  }`}
+                >
+                  ユーザー一覧
+                </button>
+              </>
+            )}
+          </nav>
+        </div>
+
+        {/* Tab Content */}
+        <div className="flex-1 overflow-hidden">
+          {activeTab === 'overview' && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <Card className="p-4">
+                <CardContent className="p-0">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-[color:var(--muted)]">アップロード済みドキュメント</p>
+                      <p className="text-2xl font-semibold">—</p>
+                    </div>
+                    <div className="text-[color:var(--brand)] font-bold text-xl">📄</div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="p-4">
+                <CardContent className="p-0">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-[color:var(--muted)]">解析ジョブ（進行中）</p>
+                      <p className="text-2xl font-semibold">—</p>
+                    </div>
+                    <div className="text-[color:var(--brand)] font-bold text-xl">⚙️</div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="p-4">
+                <CardContent className="p-0">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-[color:var(--muted)]">アクティブユーザー</p>
+                      <p className="text-2xl font-semibold">{users.length}</p>
+                    </div>
+                    <div className="text-[color:var(--brand)] font-bold text-xl">👥</div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </CardContent>
-        </Card>
+          )}
 
-        <Card className="p-4">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[color:var(--muted)]">解析ジョブ（進行中）</p>
-                <p className="text-2xl font-semibold">—</p>
-              </div>
-              <div className="text-[color:var(--brand)] font-bold text-xl">⚙️</div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="p-4">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-[color:var(--muted)]">アクティブユーザー</p>
-                <p className="text-2xl font-semibold">{users.length}</p>
-              </div>
-              <div className="text-[color:var(--brand)] font-bold text-xl">👥</div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* メイン2カラム: フォーム（左） / ユーザー一覧（右） */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1">
-          {session?.user?.role === ROLES.ADMIN && (
+          {activeTab === 'create-user' && session?.user?.role === ROLES.ADMIN && (
             <Card>
               <CardHeader>
                 <CardTitle>ユーザー作成</CardTitle>
@@ -171,40 +215,28 @@ export default function Dashboard() {
             </Card>
           )}
 
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>AIチャット</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-[color:var(--muted)] mb-4">ドキュメントとの対話や解析結果の照会はこちら。</p>
-                <Button asChild className="w-full">
-                <a href={ROUTES.CHAT}>AIチャットページへ移動</a>
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>ユーザー一覧</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="divide-y">
-                {users.map(u => (
-                  <li key={u.id} className="py-3 flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">{u.name || u.email}</div>
-                      <div className="text-sm text-[color:var(--muted)]">{u.email} — {u.role}</div>
-                    </div>
-                    <div className="text-sm text-[color:var(--muted)]">{u.id}</div>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
+          {activeTab === 'user-list' && session?.user?.role === ROLES.ADMIN && (
+            <Card className="h-full flex flex-col">
+              <CardHeader>
+                <CardTitle>ユーザー一覧</CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-y-auto">
+                <ul className="divide-y">
+                  {users.map(u => (
+                    <li key={u.id} className="py-3 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">{u.name || u.email}</div>
+                        <div className="text-sm text-[color:var(--muted)]">{u.email} — {u.role}</div>
+                      </div>
+                      <div className="text-sm text-[color:var(--muted)]">{u.id}</div>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
-    </div>
+    </ThreeColLayout>
   )
 }

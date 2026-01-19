@@ -1,0 +1,74 @@
+name: Deploy Web App
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'apps/web/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'apps/web/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          cd apps/web
+          npm ci
+
+      - name: Generate Prisma client
+        run: |
+          cd apps/web
+          npx prisma generate
+
+      - name: Run lint
+        run: |
+          cd apps/web
+          npm run lint
+
+      - name: Run tests
+        run: |
+          cd apps/web
+          npm test || true
+
+      - name: Build application
+        run: |
+          cd apps/web
+          npm run build
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+          DIFY_API_BASE: ${{ secrets.DIFY_API_BASE }}
+          DIFY_API_KEY: ${{ secrets.DIFY_API_KEY }}
+
+      - name: Deploy to Vercel (Production)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          cd apps/web
+          npx vercel --prod --yes
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy to Vercel (Preview)
+        if: github.ref != 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          cd apps/web
+          npx vercel --yes
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

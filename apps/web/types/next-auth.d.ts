@@ -21,6 +21,8 @@ declare module 'next-auth' {
     image?: string | null
     role: string
     tenantId: string
+    tenantName?: string
+    tenantCode?: string
   }
 }
 

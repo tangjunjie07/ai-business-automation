@@ -2,34 +2,35 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useRef, useEffect } from 'react'
-import { Menu, X, Grid, MessageSquare, Upload, Users } from 'lucide-react'
+import { useState } from 'react'
+import { Menu, X, Grid, MessageSquare, Upload, Users, LogOut } from 'lucide-react'
 import { useSession, signOut } from 'next-auth/react'
 import { ROUTES, ROLES, isNormalUser } from '@/config'
 
 type RoleValue = (typeof ROLES)[keyof typeof ROLES]
 
-export default function Header() {
+type NavItem = {
+  href: string
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  roles?: RoleValue[]
+}
+
+function Header() {
   const pathname = usePathname() || '/'
   const [open, setOpen] = useState(false)
-  const { data: session } = useSession()
-  const [profileOpen, setProfileOpen] = useState(false)
-  const profileRef = useRef<HTMLDivElement | null>(null)
+  const { data: session, status } = useSession()
 
-  const nav: { href: string; label: string; icon: any; roles?: Array<(typeof ROLES)[keyof typeof ROLES]> }[] = [
+  const nav: NavItem[] = [
     { href: ROUTES.DASHBOARD, label: 'ダッシュボード', icon: Grid, roles: [ROLES.ADMIN] },
     { href: ROUTES.CHAT, label: 'チャット', icon: MessageSquare, roles: [ROLES.ADMIN, ROLES.USER] },
   ]
 
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
-        setProfileOpen(false)
-      }
-    }
-    document.addEventListener('click', onClick)
-    return () => document.removeEventListener('click', onClick)
-  }, [])
+  if (status === 'loading') return null;
+
+  if (pathname.startsWith('/auth')) return null;
+
+  const logoutTarget = (pathname.startsWith('/super-admin') || session?.user?.role === ROLES.SUPER_ADMIN) ? ROUTES.SUPER_ADMIN_SIGNIN : ROUTES.SIGNIN
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -71,13 +72,8 @@ export default function Header() {
         )}
 
         {session ? (
-          <div className="hidden sm:flex items-center gap-3 relative" ref={profileRef}>
-            <button
-              onClick={() => setProfileOpen(!profileOpen)}
-              className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-[color:var(--surface)]"
-              aria-haspopup="true"
-              aria-expanded={profileOpen}
-            >
+          <div className="hidden sm:flex items-center gap-3">
+            <div className="flex items-center gap-2 px-2 py-1">
               <div className="h-8 w-8 rounded-full bg-[color:var(--brand)] text-white flex items-center justify-center text-sm font-semibold">
                 {(() => {
                   const name = session.user?.name || session.user?.email || ''
@@ -87,18 +83,10 @@ export default function Header() {
                 })()}
               </div>
               <div className="text-sm text-[color:var(--muted)] max-w-[10rem] truncate">{session.user?.name || session.user?.email}</div>
+            </div>
+            <button onClick={() => signOut({ callbackUrl: logoutTarget })} className="p-2 rounded-md hover:bg-[color:var(--surface)]" title="ログアウト">
+              <LogOut className="h-4 w-4" />
             </button>
-
-            {profileOpen && (
-              <div className="absolute left-0 top-full mt-2 w-40 bg-[color:var(--surface)] rounded-md shadow-lg ring-1 ring-black/5 overflow-hidden z-50">
-                  {(() => {
-                  const logoutTarget = (pathname.startsWith('/super-admin') || session?.user?.role === ROLES.SUPER_ADMIN) ? ROUTES.SUPER_ADMIN_SIGNIN : ROUTES.SIGNIN
-                  return (
-                    <button onClick={() => signOut({ callbackUrl: logoutTarget })} className="w-full text-left px-4 py-2 text-sm text-[color:var(--foreground)] hover:bg-[color:var(--surface)]">ログアウト</button>
-                  )
-                })()}
-              </div>
-            )}
           </div>
         ) : (
           <Link href={ROUTES.SIGNIN} className="hidden sm:inline text-sm text-[color:var(--brand)]">サインイン</Link>
@@ -165,3 +153,5 @@ export default function Header() {
     </div>
   )
 }
+
+export default Header;

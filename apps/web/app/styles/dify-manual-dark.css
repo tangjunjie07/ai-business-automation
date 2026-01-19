@@ -1,0 +1,22 @@
+html[data-theme="dark"] {
+    --color-chatbot-bg: linear-gradient(180deg,
+            rgba(34, 34, 37, 0.9) 0%,
+            rgba(29, 29, 32, 0.9) 90.48%);
+    --color-chat-bubble-bg: linear-gradient(180deg,
+            rgb(42, 43, 48) 0%,
+            rgb(37, 38, 42) 100%);
+    --color-chat-input-mask: linear-gradient(180deg,
+            rgba(24, 24, 27, 0.04) 0%,
+            rgba(24, 24, 27, 0.60) 100%);
+    /* truncated: other theme variables omitted for brevity */
+    --color-background-gradient-bg-fill-chat-bubble-bg-3: #27314d;
+    --color-state-base-active: rgb(21 90 239 / 0.14);
+    --color-state-base-hover: rgb(200 206 218 / 0.08);
+    --color-text-accent: #5289ff;
+
+}
+
+/* Utility class fallbacks for components that use Dify Tailwind names */
+.bg-chat-input-mask { background-image: var(--color-chat-input-mask) !important; }
+.bg-chatbot-bg { background-image: var(--color-chatbot-bg) !important; }
+.bg-chat-bubble-bg { background-image: var(--color-chat-bubble-bg) !important; }
