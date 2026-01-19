@@ -276,6 +276,6 @@ model ChatSession {
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, updatedAt])
-  @@index([difyId])
+  @@unique([difyId])
   @@map("chat_sessions")
 }

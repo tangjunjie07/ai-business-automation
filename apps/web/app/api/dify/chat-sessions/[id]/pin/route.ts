@@ -22,13 +22,13 @@ function getPrisma() {
 }
 
 // ピン留め/解除API
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { isPinned } = await req.json()
   if (typeof isPinned !== 'boolean') return NextResponse.json({ error: 'isPinned必須' }, { status: 400 })
-  const id = params.id
+  const { id } = await params
   if (!id) return NextResponse.json({ error: 'id必須' }, { status: 400 })
   await getPrisma().chatSession.update({ where: { difyId: id }, data: { isPinned } })
   return NextResponse.json({ success: true })
 }
 
-export const runtime = 'nodejs'
+// runtime declaration removed — this route will use the default runtime

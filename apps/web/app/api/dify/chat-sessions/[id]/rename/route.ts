@@ -22,13 +22,30 @@ function getPrisma() {
 }
 
 // 履歴名変更API
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const { title } = await req.json()
-  if (!title) return NextResponse.json({ error: 'title必須' }, { status: 400 })
-  const id = params.id
-  if (!id) return NextResponse.json({ error: 'id必須' }, { status: 400 })
-  await getPrisma().chatSession.update({ where: { difyId: id }, data: { title } })
-  return NextResponse.json({ success: true })
+export async function POST(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  try {
+    const params = await context.params;
+    const id = params.id;
+    
+    const { title } = await req.json()
+    if (!title || typeof title !== 'string' || title.trim() === '') {
+      return NextResponse.json({ error: 'titleは必須' }, { status: 400 })
+    }
+    if (!id) {
+      return NextResponse.json({ error: 'id必須' }, { status: 400 })
+    }
+    
+    const prisma = getPrisma()
+    const session = await prisma.chatSession.findFirst({ where: { difyId: id } })
+    if (!session) {
+      return NextResponse.json({ error: 'セッションが見つかりません' }, { status: 404 })
+    }
+    
+    await prisma.chatSession.update({ where: { id: session.id }, data: { title: title.trim() } })
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    return NextResponse.json({ error: 'サーバーエラー' }, { status: 500 })
+  }
 }
 
-export const runtime = 'nodejs'
+// runtime declaration removed — using default runtime

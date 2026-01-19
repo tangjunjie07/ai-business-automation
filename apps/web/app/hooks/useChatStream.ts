@@ -3,6 +3,7 @@ import { useState, useRef } from 'react';
 export interface Message {
   role: 'user' | 'assistant';
   content: string;
+  message_files?: any[];
 }
 
 
@@ -20,13 +21,15 @@ export const useChatStream = () => {
     tenantId: string,
     userId?: string,
     onConversationId?: (id: string) => void,
-    onFirstAiMessage?: (title?: string, conversationId?: string) => void
+    onFirstAiMessage?: (title?: string, conversationId?: string) => void,
+    files?: any[]
   ) => {
     setIsLoading(true);
     abortControllerRef.current = new AbortController();
-    setMessages(prev => [...prev, { role: 'user', content: query }]);
+    setMessages(prev => [...prev, { role: 'user', content: query, message_files: files?.filter(f => f.id).map(f => ({ id: f.id, type: f.type, url: f.previewUrl, belongs_to: 'user', name: f.name, size: f.size })) }]);
     let conversationIdSet = false;
     let latestConversationId: string | undefined = conversationId;
+    let isFirstMessageEnd = true; // 最初の message_end のみ onFirstAiMessage を呼ぶ
     try {
       // 添付ファイルIDリストも送信
       const response = await fetch('/api/dify/chat-messages', {
@@ -39,7 +42,11 @@ export const useChatStream = () => {
           query,
           conversation_id: conversationId && conversationId !== 'null' ? conversationId : undefined,
           user: userId,
-          inputs: { files: fileIds }
+          files: files?.map(f => ({
+            type: f.type || 'image', // デフォルト image
+            transfer_method: 'local_file',
+            upload_file_id: f.id
+          }))
         }),
         signal: abortControllerRef.current.signal
       });
@@ -80,7 +87,10 @@ export const useChatStream = () => {
                 const aiMsg = assistantMessage;
                 title = (userMsg + (aiMsg ? (" " + aiMsg) : "")).slice(0, 24);
               } catch {}
-              if (onFirstAiMessage) onFirstAiMessage(title, latestConversationId);
+              if (onFirstAiMessage && isFirstMessageEnd) {
+                onFirstAiMessage(title, latestConversationId);
+                isFirstMessageEnd = false; // 次回以降呼ばない
+              }
             }
           } catch (e) {
             // 不正なJSON行は無視
@@ -93,25 +103,33 @@ export const useChatStream = () => {
     } finally {
       setIsLoading(false);
       // 送信後はファイルIDリストをクリア
-      setFileIds([]);
+      // setFileIds([]);
     }
   };
 
   // 添付ファイルID追加
   const addFileId = (id: string) => setFileIds(prev => [...prev, id]);
+  const removeFileId = (id: string) => setFileIds(prev => prev.filter(fid => fid !== id));
   // 添付ファイルIDリストをクリア
   const clearFiles = () => setFileIds([]);
 
   // 履歴取得API最適化: conversationId指定で履歴のみ取得
   const fetchHistory = async (conversationId: string, tenantId: string, userId: string) => {
-    const res = await fetch(`/api/dify/messages?conversation_id=${conversationId}`, {
+    const res = await fetch(`/api/dify/messages?conversation_id=${conversationId}&user=${userId}`, {
       headers: {
         'x-tenant-id': tenantId,
         'x-user-id': userId
       }
     });
     const data = await res.json();
-    if (Array.isArray(data.messages)) setMessages(data.messages);
+    if (Array.isArray(data.data)) {
+      // Dify APIレスポンスをチャット形式に変換: 各アイテムからユーザーとアシスタントのメッセージを作成
+      const messages: Message[] = data.data.flatMap(item => [
+        { role: 'user' as const, content: item.query, message_files: item.message_files },
+        { role: 'assistant' as const, content: item.answer }
+      ]);
+      setMessages(messages);
+    }
   };
 
   // ピン留めAPI連携
@@ -149,6 +167,7 @@ export const useChatStream = () => {
     stopGeneration,
     fileIds,
     addFileId,
+    removeFileId,
     clearFiles,
     fetchHistory,
     pinSession,

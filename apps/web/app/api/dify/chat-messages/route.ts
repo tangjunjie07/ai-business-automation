@@ -25,18 +25,16 @@ function getPrisma() {
 export async function POST(req: NextRequest) {
   // 日本語コメント: Dify API仕様に準拠し、初回チャット時はchat_sessionsへ保存
   const body = await req.json()
-  const { query, inputs, user, conversation_id } = body
-
-  // ファイルIDリスト（inputs.files）を抽出
-  const files = Array.isArray(inputs?.files) ? inputs.files : (inputs?.files ? [inputs.files] : [])
+  const { query, inputs, user, conversation_id, files } = body
 
   // Dify APIリクエストbodyを仕様通り組み立て
   const difyBody: any = {
     query: query || '',
-    inputs: files.length > 0 ? { files } : {},
+    inputs: inputs || {},
     user: user || '',
     conversation_id: conversation_id || undefined,
     response_mode: 'streaming',
+    files: files || []
   }
 
   // Dify APIへリクエスト（APIキー・ベースURLはconfig経由で取得）
@@ -45,7 +43,7 @@ export async function POST(req: NextRequest) {
   if (!DIFY_API_BASE) {
     return NextResponse.json({ error: 'Dify API base が設定されていません' }, { status: 500 })
   }
-  const difyRes = await fetch(`${DIFY_API_BASE.replace(/\/+$/, '')}/v1/chat-messages`, {
+  const difyRes = await fetch(`${DIFY_API_BASE.replace(/\/+$/, '')}/chat-messages`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${DIFY_API_KEY}`,

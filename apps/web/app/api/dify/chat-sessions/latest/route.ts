@@ -33,4 +33,4 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ conversation_id: session.difyId })
 }
 
-export const runtime = 'nodejs'
+// runtime declaration removed — using default runtime

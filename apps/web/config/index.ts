@@ -44,8 +44,12 @@ export const network = {
   wsBase: '',
 }
 
+export const ui = {
+  assistantIcon: get('ASSISTANT_ICON', '🤖'),
+}
+
 export const dify = {
-  apiBase: get('DIFY_API_BASE', 'https://api.dify.ai'),
+  apiBase: get('DIFY_API_BASE', 'https://api.dify.ai/v1'),
 }
 
 // Server-only accessor for secret key. DO NOT call from client-side code.
@@ -80,6 +84,8 @@ export const config = {
   sentry,
   featureFlags,
   network,
+  dify,
+  ui,
   ROUTES,
   ROLES,
   isNormalUser,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import AlertDialog from './alert-dialog';
 
 export function RenameModal({
   isShow,
@@ -7,12 +7,14 @@ export function RenameModal({
   name,
   onClose,
   onSave,
+  zIndex = 9999,
 }: {
   isShow: boolean;
   saveLoading: boolean;
   name: string;
   onClose: () => void;
   onSave: (name: string) => void;
+  zIndex?: number;
 }) {
   const [tempName, setTempName] = useState(name);
 
@@ -20,12 +22,18 @@ export function RenameModal({
     setTempName(name);
   }, [name, isShow]);
 
-  if (!isShow) return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30">
-      <div className="bg-chat-bubble-bg rounded-xl shadow-lg p-6 w-full max-w-md">
-        <div className="text-lg font-semibold mb-4">会話の名前を変更</div>
+  return (
+    <AlertDialog
+      isOpen={isShow}
+      title="会話の名前を変更"
+      confirmText={saveLoading ? '保存中...' : '保存'}
+      cancelText="キャンセル"
+      intent="default"
+      onCancel={() => !saveLoading && onClose()}
+      onConfirm={() => { if (!saveLoading && tempName.trim()) onSave(tempName.trim()); }}
+      zIndex={zIndex}
+    >
+      <div>
         <div className="mb-2 text-sm font-medium">新しい名前</div>
         <input
           className="w-full border rounded px-3 py-2 mb-6"
@@ -34,12 +42,7 @@ export function RenameModal({
           placeholder="会話名を入力"
           disabled={saveLoading}
         />
-        <div className="flex justify-end gap-2">
-          <button className="px-4 py-2 rounded bg-chat-input-mask hover:bg-state-base-hover" onClick={onClose} disabled={saveLoading}>キャンセル</button>
-          <button className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" onClick={() => onSave(tempName)} disabled={saveLoading || !tempName.trim()}>{saveLoading ? '保存中...' : '保存'}</button>
-        </div>
       </div>
-    </div>,
-    typeof window !== 'undefined' ? document.body : (null as any)
+    </AlertDialog>
   );
 }

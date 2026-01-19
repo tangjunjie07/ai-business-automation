@@ -127,3 +127,65 @@ html[data-theme="dark"] {
 .bg-divider-subtle { background-color: var(--color-divider-subtle, rgba(16,24,40,0.04)); }
 .border-components-panel-border { border-color: var(--color-divider-regular, rgba(16,24,40,0.08)); }
 
+
+/* 确保 Markdown 列表显示符号并有缩进 */
+.markdown-body ul {
+  list-style-type: disc; /* 显示圆点 */
+  margin-left: 1.5rem;   /* 左侧缩进 */
+  margin-bottom: 1rem;
+}
+
+.markdown-body ol {
+  list-style-type: decimal; /* 显示数字 1. 2. 3. */
+  margin-left: 1.5rem;      /* 左侧缩进 */
+  margin-bottom: 1rem;
+}
+
+.markdown-body li {
+  margin-bottom: 0.5rem;   /* 列表项之间的间距 */
+  line-height: 1.6;        /* 改善阅读行高 */
+}
+
+/* 关键：保留换行符 */
+.text-container {
+  white-space: pre-wrap;   /* 必写！防止文字挤成一团 */
+  word-break: break-word;
+}
+
+/* Tailwind Typography (prose) のリストスタイルを強制復元 */
+.prose ol {
+  list-style-type: decimal !important; /* 数字を表示 (1, 2, 3) */
+  padding-left: 1.5rem !important;    /* 左側のインデント */
+  margin-top: 1rem !important;
+  margin-bottom: 1rem !important;
+}
+
+.prose ul {
+  list-style-type: disc !important;    /* 黒丸を表示 */
+  padding-left: 1.5rem !important;    /* 左側のインデント（ネスト用） */
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.prose li {
+  margin-top: 0.25rem !important;
+  margin-bottom: 0.25rem !important;
+  display: list-item !important;      /* これが重要！list-itemでないと数字が出ません */
+}
+
+/* ネストされたリスト（2段目）の調整 */
+.prose li > ul {
+  margin-top: 0.25rem !important;
+  list-style-type: circle !important; /* 2段目は白丸に */
+}
+
+/* prose 内の画像を適切なサイズに制限 */
+.prose img {
+  max-width: 300px; /* お好みのサイズに固定 */
+  height: auto;
+  border-radius: 8px;
+  margin: 10px 0;
+  border: 1px solid #eee;
+  cursor: pointer; /* クリックで拡大させる場合など */
+}
+

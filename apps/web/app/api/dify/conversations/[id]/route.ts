@@ -23,31 +23,39 @@ function getPrisma() {
 }
 
 // 会話削除API: DB(chat_sessions)とDify両方から削除
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   // 日本語コメント: Dify API仕様に準拠し、DBとDify両方削除
-  const conversationId = params.id
+  const conversationId = (await params).id
   if (!conversationId) {
     return NextResponse.json({ error: 'conversation_id未指定' }, { status: 400 })
   }
 
-  // DBから削除
+
+  const user = req.headers.get('x-user-id') 
+  // DBから削除（直接ロジック記述）
   try {
     await getPrisma().chatSession.delete({
       where: { difyId: conversationId }
     })
+    console.log('DB deletion successful')
   } catch (e) {
+    console.log('DB deletion failed:', e)
     // 存在しない場合は無視
   }
 
   // Dify APIから削除
   const DIFY_API_KEY = getDifyKey()
-  const DIFY_API_BASE = config.dify.apiBase
-  const difyRes = await fetch(`${DIFY_API_BASE.replace(/\/+$/, '')}/v1/conversations/${conversationId}`, {
+  const DIFY_API_BASE = dify?.apiBase || config.dify?.apiBase
+  if (!DIFY_API_BASE) {
+    return NextResponse.json({ error: 'Dify API base が設定されていません' }, { status: 500 })
+  }
+  const difyRes = await fetch(`${DIFY_API_BASE.replace(/\/+$/, '')}/conversations/${conversationId}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${DIFY_API_KEY}`,
       'Content-Type': 'application/json',
     },
+    body: JSON.stringify({ user: user }) // 固定ユーザーIDを使用
   })
 
   if (!difyRes.ok) {
@@ -58,4 +66,4 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   return NextResponse.json({ success: true })
 }
 
-export const runtime = 'nodejs'
+// runtime declaration removed — using default runtime

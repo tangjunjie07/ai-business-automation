@@ -22,6 +22,7 @@
    - すべての Dify 用 Route は必ず `apps/web/app/api/dify` 配下に設置してください。
    - Dify APIを実装・利用する際は、必ず `docs/DifyAPI.md` のAPIドキュメントを参照し、仕様通りに実装してください。
    - フロントエンドからバックエンドAPI（/api/dify/xxx）を呼び出す際は、必ず `x-tenant-id` ヘッダーを指定すること（テナント分離・RLS制約のため必須）。
+   - サーバー Route で DB 接続が必要な場合は、共有の Prisma 初期化を利用してください。具体的には Router 側では `import { getPrisma } from '@/lib/prisma'` を参照し、新たに PrismaClient を直接生成しないでください。`getPrisma` はアプリ全体で単一の Prisma インスタンスを返すユーティリティです。
 3. 環境変数 `process.env.DIFY_API_BASE`（および `NEXT_PUBLIC_DIFY_API_BASE` 等のクライアント公開変数）の直接使用は禁止。
    - Dify ベース URL / API キーは `apps/web/config/index.ts` 経由で読み込むユーティリティで解決してください。
    - フロントエンドで `process.env.NEXT_PUBLIC_DIFY_API_BASE` を参照することは禁止です（ビルド時にキーがバンドルされます）。

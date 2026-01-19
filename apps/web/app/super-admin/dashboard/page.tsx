@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { Label } from '../../components/ui/label'
 import toast from 'react-hot-toast'
+import ThreeColLayout from '../../components/three-col-layout'
 
 interface Tenant {
   id: string
@@ -86,92 +87,87 @@ export default function SuperAdminDashboard() {
     }
   }
 
-  import ThreeColLayout from '../../components/three-col-layout'
-
   return (
-    <ThreeColLayout
-      left={(
-        <>
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-3xl font-bold">システム管理ダッシュボード</h1>
-              <p className="text-sm text-[color:var(--muted)]">全テナントとユーザーの管理</p>
-            </div>
-            <div />
+    <ThreeColLayout left={null}>
+      <>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-3xl font-bold">システム管理ダッシュボード</h1>
+            <p className="text-sm text-[color:var(--muted)]">全テナントとユーザーの管理</p>
           </div>
+          <div />
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-            <Card className="p-4">
-              <CardContent className="p-0">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-[color:var(--muted)]">テナント数</p>
-                    <p className="text-2xl font-semibold">{tenants.length}</p>
-                  </div>
-                  <div className="text-[color:var(--brand)] font-bold text-xl">🏢</div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="p-4">
-              <CardContent className="p-0">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-[color:var(--muted)]">システム管理者</p>
-                    <p className="text-2xl font-semibold">—</p>
-                  </div>
-                  <div className="text-[color:var(--brand)] font-bold text-xl">🔑</div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="p-4">
-              <CardContent className="p-0">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-[color:var(--muted)]">全ユーザー</p>
-                    <p className="text-2xl font-semibold">{users.length}</p>
-                  </div>
-                  <div className="text-[color:var(--brand)] font-bold text-xl">👥</div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>テナント作成</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleCreateTenant} className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <Card className="p-4">
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between">
                 <div>
-                  <Label>テナント名</Label>
-                  <Input value={newTenant.name} onChange={e => setNewTenant({ ...newTenant, name: e.target.value })} required />
+                  <p className="text-sm text-[color:var(--muted)]">テナント数</p>
+                  <p className="text-2xl font-semibold">{tenants.length}</p>
                 </div>
-                <div>
-                  <Label>テナントコード</Label>
-                  <Input value={newTenant.code} onChange={e => setNewTenant({ ...newTenant, code: e.target.value })} required />
-                </div>
-                <div>
-                  <Label>管理者メール</Label>
-                  <Input type="email" value={newTenant.adminEmail} onChange={e => setNewTenant({ ...newTenant, adminEmail: e.target.value })} required />
-                </div>
-                <div>
-                  <Label>管理者パスワード</Label>
-                  <Input type="password" value={newTenant.adminPassword} onChange={e => setNewTenant({ ...newTenant, adminPassword: e.target.value })} required />
-                </div>
-                <div>
-                  <Button type="submit" disabled={loading} className="w-full">{loading ? '作成中...' : 'テナント作成'}</Button>
-                  {error && <p className="text-red-500 mt-2">{error}</p>}
-                </div>
-              </form>
+                <div className="text-[color:var(--brand)] font-bold text-xl">🏢</div>
+              </div>
             </CardContent>
           </Card>
-        </>
-      )}
-    >
-      <div className="lg:col-span-2">
-        <Card className="mb-6">
+
+          <Card className="p-4">
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-[color:var(--muted)]">システム管理者</p>
+                  <p className="text-2xl font-semibold">—</p>
+                </div>
+                <div className="text-[color:var(--brand)] font-bold text-xl">🔑</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="p-4">
+            <CardContent className="p-0">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-[color:var(--muted)]">全ユーザー</p>
+                  <p className="text-2xl font-semibold">{users.length}</p>
+                </div>
+                <div className="text-[color:var(--brand)] font-bold text-xl">👥</div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>テナント作成</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleCreateTenant} className="space-y-4">
+              <div>
+                <Label>テナント名</Label>
+                <Input value={newTenant.name} onChange={e => setNewTenant({ ...newTenant, name: e.target.value })} required />
+              </div>
+              <div>
+                <Label>テナントコード</Label>
+                <Input value={newTenant.code} onChange={e => setNewTenant({ ...newTenant, code: e.target.value })} required />
+              </div>
+              <div>
+                <Label>管理者メール</Label>
+                <Input type="email" value={newTenant.adminEmail} onChange={e => setNewTenant({ ...newTenant, adminEmail: e.target.value })} required />
+              </div>
+              <div>
+                <Label>管理者パスワード</Label>
+                <Input type="password" value={newTenant.adminPassword} onChange={e => setNewTenant({ ...newTenant, adminPassword: e.target.value })} required />
+              </div>
+              <div>
+                <Button type="submit" disabled={loading} className="w-full">{loading ? '作成中...' : 'テナント作成'}</Button>
+                {error && <p className="text-red-500 mt-2">{error}</p>}
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+
+        <div>
+        <Card className="mb-4">
           <CardHeader>
             <CardTitle>テナント一覧</CardTitle>
           </CardHeader>
@@ -209,6 +205,7 @@ export default function SuperAdminDashboard() {
           </CardContent>
         </Card>
       </div>
+      </>
     </ThreeColLayout>
   )
 }

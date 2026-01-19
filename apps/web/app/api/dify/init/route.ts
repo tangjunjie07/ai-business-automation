@@ -6,19 +6,19 @@ import config, { getDifyKey } from '@/config'
 export async function GET(req: Request) {
   try {
     const DIFY_API_KEY = getDifyKey()
-    const DIFY_API_BASE = (config.dify?.apiBase || 'https://api.dify.ai').replace(/\/+$/, '')
+    const DIFY_API_BASE = (config.dify?.apiBase || 'https://api.dify.ai/v1').replace(/\/+$/, '')
     if (!DIFY_API_KEY) return new Response(JSON.stringify({ error: 'DIFY_API_KEY not configured' }), { status: 500, headers: { 'Content-Type': 'application/json' } })
 
     // Derive tenant and user from session first, then headers as fallback
     const session = await getServerSession(authOptions)
     const tenant = req.headers.get('x-tenant-id') || session?.user?.tenantId || ''
-    const user = session?.user?.id || req.headers.get('x-user-id') || req.headers.get('x-user') || tenant || 'web-anonymous'
+    const user = session?.user?.id || req.headers.get('x-user-id')
 
     // For initial load we should fetch existing conversations and messages
     // instead of creating a new chat message. Call conversations list and then
     // fetch messages for the most recent conversation.
 
-    const convsRes = await fetch(`${DIFY_API_BASE}/v1/conversations`, {
+    const convsRes = await fetch(`${DIFY_API_BASE}/conversations`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${DIFY_API_KEY}`,
@@ -56,14 +56,14 @@ export async function GET(req: Request) {
     }
 
     // Try conversation messages endpoint, fallback to messages query endpoint
-    let msgsRes = await fetch(`${DIFY_API_BASE}/v1/conversations/${convId}/messages`, {
+    let msgsRes = await fetch(`${DIFY_API_BASE}/conversations/${convId}/messages`, {
       method: 'GET',
       headers: { 'Authorization': `Bearer ${DIFY_API_KEY}`, 'Content-Type': 'application/json' }
     })
 
     if (!msgsRes.ok) {
       // fallback
-      msgsRes = await fetch(`${DIFY_API_BASE}/v1/messages?conversation_id=${encodeURIComponent(convId)}`, {
+      msgsRes = await fetch(`${DIFY_API_BASE}/messages?conversation_id=${encodeURIComponent(convId)}`, {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${DIFY_API_KEY}`, 'Content-Type': 'application/json' }
       })
@@ -92,4 +92,4 @@ export async function GET(req: Request) {
   }
 }
 
-export const runtime = 'nodejs'
+// runtime declaration removed — using default runtime

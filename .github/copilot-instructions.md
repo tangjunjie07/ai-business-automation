@@ -2,7 +2,7 @@
 # Copilot運用ガイド（Webアプリ用）
 ## API実装時の注意
 API実装する際は、必ず下記のAPIドキュメント（公式仕様）を事前に確認してください。
-- [docs/DifyAPI.md](../docs/DifyAPI.md)
+- [docs/DifyAPI.md](../apps/web/docs/DifyAPI.md)
 このドキュメントを参照せずにAPI設計・実装・修正を行うことは禁止します。
 
 ## 対象範囲
@@ -14,10 +14,11 @@ API実装する際は、必ず下記のAPIドキュメント（公式仕様）�
 - API実装時はリクエストバリデーション・エラーハンドリング・テナント分離（x-tenant-idヘッダー）を必ず考慮。
 - 既存のUI/UX・型・ディレクトリ構成に合わせて最小限の差分で編集する。
 - 新規ファイル追加時は簡単なREADMEと型定義を添付する。
+- DBスキーマ変更時は `apps/web/docs/DB_MIGRATION.md` の手順に従い、安全にマイグレーションを実行する。
 
 ## テスト・検証
 - `npm run validate:ai-rules` でAI実装ルール違反を自動検出。
-- フロントエンドの動作確認は `apps/web/` 配下で `pnpm dev` を推奨。
+- フロントエンドの動作確認は `apps/web/` 配下で `npm run dev` を推奨。
 
 
 ## 注意事項

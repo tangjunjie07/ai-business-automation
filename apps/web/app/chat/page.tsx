@@ -16,7 +16,7 @@ type ChatSession = { difyId: string; title: string; isPinned: boolean; updatedAt
 
 export default function ChatPage() {
   const { data: session, status } = useSession();
-  const { messages, sendMessage, isLoading, stopGeneration, fetchHistory, pinSession, deleteSession, resetAll } = useChatStream();
+  const { messages, sendMessage, isLoading, stopGeneration, fetchHistory, pinSession, deleteSession, resetAll, addFileId, removeFileId, clearFiles } = useChatStream();
   const [input, setInput] = useState('');
   const [isLeftOpen, setIsLeftOpen] = useState(false);
   const [isRightOpen, setIsRightOpen] = useState(false);
@@ -24,6 +24,8 @@ export default function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [headerTitle, setHeaderTitle] = useState<string>('経理担当AI');
   const [tenantId, setTenantId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [files, setFiles] = useState<any[]>([]);
 
   const router = useRouter();
   const didInit = useRef(false);
@@ -32,11 +34,45 @@ export default function ChatPage() {
     if (didInit.current) return;
     didInit.current = true;
     const tid = session?.user?.tenantId;
+    const uid = session?.user?.id;
     setTenantId(tid || null);
+    setUserId(uid || null);
     if (!tid) {
       router.push(ROUTES.SIGNIN);
       return;
     }
+
+    // --- Dify/DB会話同期処理 ---
+    const syncConversations = async () => {
+      try {
+        // Dify APIから全会話取得
+        const difyRes = await fetch('/api/dify/conversations', {
+          headers: { 'x-user-id': uid || '', 'x-tenant-id': tid || '' }
+        });
+        const difyData = await difyRes.json();
+        const difyIds = Array.isArray(difyData.data) ? difyData.data.map((c: any) => c.id) : [];
+        // DBから全会話取得
+        const dbRes = await fetch('/api/dify/db/conversations', {
+          headers: { 'x-user-id': uid || '', 'x-tenant-id': tid || '' }
+        });
+        const dbData = await dbRes.json();
+        const dbIds = Array.isArray(dbData.data) ? dbData.data.map((c: any) => c.id) : [];
+        // DBに存在しDifyにないIDを抽出
+        const toDelete = dbIds.filter((id: string) => !difyIds.includes(id));
+        if (toDelete.length > 0) {
+          await fetch('/api/dify/db/conversations', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json', 'x-user-id': uid || '', 'x-tenant-id': tid || '' },
+            body: JSON.stringify({ ids: toDelete })
+          });
+        }
+      } catch (e) {
+        // エラーは握りつぶす（同期失敗時も画面は進める）
+        console.warn('会話同期失敗', e);
+      }
+    };
+    syncConversations();
+    // --- 既存の初期化ロジック（サイドバー用） ---
     fetch('/api/dify/chat-sessions/list', {
       headers: {
         'x-tenant-id': tid,
@@ -45,26 +81,35 @@ export default function ChatPage() {
     })
       .then(res => res.json())
       .then(data => {
-        if (Array.isArray(data.sessions)) setSessions(data.sessions);
-      });
-    const lastId = typeof window !== 'undefined' ? localStorage.getItem('last_conversation_id') : null;
-    if (lastId) {
-      setConversationId(lastId);
-    } else {
-      fetch('/api/dify/chat-sessions/latest', {
-        headers: {
-          'x-tenant-id': tid,
-          'x-user-id': session?.user?.id || ''
-        }
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data.conversation_id) {
-            setConversationId(data.conversation_id);
-            if (typeof window !== 'undefined') localStorage.setItem('last_conversation_id', data.conversation_id);
+        if (Array.isArray(data.sessions)) {
+          setSessions(data.sessions);
+          // sessions取得後にlastIdをチェック
+          const lastId = typeof window !== 'undefined' ? localStorage.getItem('last_conversation_id') : null;
+          if (lastId && data.sessions.some(s => s.difyId === lastId)) {
+              setConversationId(lastId);
+              fetchHistory(lastId, tid, uid);
+          } else {
+            localStorage.setItem('last_conversation_id', '')
+            // 存在しない場合はlatestを取得
+            fetch('/api/dify/chat-sessions/latest', {
+              headers: {
+                'x-tenant-id': tid,
+                'x-user-id': session?.user?.id || ''
+              }
+            })
+              .then(res => res.json())
+              .then(data => {
+                if (data.conversation_id) {
+                  setConversationId(data.conversation_id);
+                  fetchHistory(data.conversation_id, tid, uid);
+                  if (typeof window !== 'undefined') localStorage.setItem('last_conversation_id', data.conversation_id);
+                }
+              });
           }
-        });
-    }
+        } else {
+            localStorage.setItem('last_conversation_id', '')
+        }
+      });
     // 新規チャット作成イベントリスナー
     const handleNewChat = (e: any) => {
       const newSession = e.detail;
@@ -141,7 +186,8 @@ export default function ChatPage() {
         }
         // ヘッダーのタイトルも更新（messagesの先頭にタイトルを挿入するなど、必要に応じて）
         // 必要ならsetStateでヘッダー用タイトルstateを追加し、ここでsetする
-      }
+      },
+      files
     );
     setInput('');
   };
@@ -174,12 +220,30 @@ export default function ChatPage() {
               messages={messages}
               onSelect={handleSidebarSelect}
               onClose={() => setIsLeftOpen(false)}
+              onDelete={(id: string) => {
+                // remove from local sessions list
+                setSessions(prev => prev.filter(s => s.difyId !== id));
+                // if deleted conversation is currently selected, switch to new-chat mode
+                if (conversationId === id) {
+                  setConversationId(null);
+                  setInput('');
+                  resetAll();
+                  if (typeof window !== 'undefined') localStorage.setItem('last_conversation_id', '');
+                }
+              }}
               onNewChat={() => {
-                // 新規チャットボタン押下時は全状態をリセット
                 setConversationId(null);
                 setInput('');
                 resetAll();
+                if (typeof window !== 'undefined') localStorage.setItem('last_conversation_id', '');
               }}
+              onRename={(id, newName) => {
+                setSessions(prev => prev.map(s => s.difyId === id ? { ...s, title: newName } : s));
+                // 選択中の会話ならヘッダーも更新
+                if (conversationId === id) setHeaderTitle(newName);
+              }}
+              tenantId={tenantId}
+              userId={userId}
             />
           </div>
         )}
@@ -204,7 +268,7 @@ export default function ChatPage() {
 
             <div className="mr-1 shrink-0">
               <span className="flex items-center justify-center relative grow-0 shrink-0 overflow-hidden border-[0.5px] border-divider-regular w-10 h-10 text-[24px] rounded-[10px]" style={{background: 'rgb(255, 234, 213)'}}>
-                <span>🤖</span>
+                <span>{config.ui.assistantIcon}</span>
               </span>
             </div>
             <div className="p-1 text-divider-deep">/</div>
@@ -226,6 +290,7 @@ export default function ChatPage() {
                   setConversationId(null);
                   setInput('');
                   resetAll();
+                  if (typeof window !== 'undefined') localStorage.setItem('last_conversation_id', '');
                 }}
                 aria-label="new-chat-header"
               >
@@ -251,10 +316,10 @@ export default function ChatPage() {
           </div>
         </header>
         {/* メッセージリスト: Dify風 max-w-3xl, mx-auto。チャットエリア内で独立してスクロールし、入力欄は下部にsticky配置 */}
-        <div className="flex-1 flex flex-col min-h-0 relative h-full">
-          <div className="flex-1 overflow-y-auto pb-40 chat-scrollbar">
+        <div className="flex-1 flex flex-col min-h-0 relative h-full z-10">
+          <div className="flex-1 overflow-y-auto pb-60 chat-scrollbar">
             <div className="max-w-3xl mx-auto w-full p-4 md:p-8 space-y-6 min-h-[200px] flex flex-col justify-end">
-              <MessageList messages={messages} />
+              <MessageList messages={messages} session={session} />
               {messages.length === 0 && (
                 <div className="text-center text-gray-400 py-12 select-none">私は高度な専門知識を持つプロの経理担当AIです。
 提供された請求書データ（OCR原文と構造化抽出結果）に基づき、最も適切な「勘定科目」と「補助科目」を特定し、仕訳データを作成することができます。</div>
@@ -262,7 +327,7 @@ export default function ChatPage() {
             </div>
           </div>
           {/* 入力欄: 画面下部にabsolute配置（Dify風） */}
-          <div className="absolute bottom-0 left-0 w-full z-50 flex justify-center bg-chat-input-mask dark:bg-[#18181c] pb-4 pointer-events-none transition-colors duration-300">
+          <div className="absolute bottom-0 left-0 w-full z-[100] flex justify-center bg-chat-input-mask dark:bg-[#18181c] pb-4 pointer-events-none transition-colors duration-300">
             <div className="relative mx-auto w-full max-w-[768px] px-4 pointer-events-auto">
               <div className="relative z-10 overflow-hidden rounded-xl border-0 bg-chat-bubble-bg shadow-none">
                 <div className="relative px-2 pt-2 border-0">
@@ -273,6 +338,10 @@ export default function ChatPage() {
                     isLoading={isLoading}
                     onStop={stopGeneration}
                     onUpload={() => {}}
+                    addFileId={addFileId}
+                    removeFileId={removeFileId}
+                    clearFiles={clearFiles}
+                    onFilesChange={setFiles}
                   />
                 </div>
               </div>

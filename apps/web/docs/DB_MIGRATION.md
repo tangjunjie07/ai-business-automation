@@ -1,5 +1,29 @@
 # DB マイグレーション手順（バックアップ→マイグレーション→スモーク）
 
+## 開発環境でのマイグレーション
+
+### スキーマ変更後の適用
+スキーマ（`prisma/schema.prisma`）を変更した場合、以下のコマンドでDBに適用します。
+
+1. マイグレーション作成と適用（推奨）:
+   ```bash
+   npx prisma migrate dev --name <migration_name>
+   ```
+   - 例: `npx prisma migrate dev --name add-unique-difyId`
+
+2. DB同期がずれた場合のリセット:
+   ```bash
+   npx prisma migrate reset --force
+   ```
+   - これによりDBがリセットされ、すべてのマイグレーションが再適用されます。
+   - データが失われるので注意。
+
+### Prisma StudioでDB確認
+```bash
+npx prisma studio
+```
+- ブラウザで http://localhost:5555 にアクセスしてDBの内容を確認。
+
 目的
 - 本番環境でのデータ損失を避けつつ、安全にスキーマ変更を適用するための手順。
 

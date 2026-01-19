@@ -19,8 +19,8 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   if (!DIFY_API_BASE) {
     return NextResponse.json({ error: 'Dify API base が設定されていません' }, { status: 500 });
   }
-  // Dify API: POST /v1/conversations/{conversation_id}/name
-  const difyRes = await fetch(`${DIFY_API_BASE.replace(/\/$/, '')}/v1/conversations/${conversationId}/name`, {
+  // Dify API: POST /conversations/{conversation_id}/name
+  const difyRes = await fetch(`${DIFY_API_BASE.replace(/\/$/, '')}/conversations/${conversationId}/name`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${DIFY_API_KEY}`,
@@ -40,4 +40,4 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
   return NextResponse.json({ name: data.name || data.title || '' });
 }
 
-export const runtime = 'nodejs'
+// runtime declaration removed — using default runtime

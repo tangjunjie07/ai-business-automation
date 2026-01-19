@@ -10,14 +10,22 @@ export function ChatInput({
   onSend,
   isLoading,
   onStop,
-  onUpload
+  onUpload,
+  addFileId,
+  removeFileId,
+  clearFiles,
+  onFilesChange
 }: {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
   isLoading: boolean;
   onStop: () => void;
-  onUpload: (files: FileList | null) => void;
+  onUpload?: (files: FileList | null) => void;
+  addFileId: (id: string) => void;
+  removeFileId: (id: string) => void;
+  clearFiles: () => void;
+  onFilesChange: (files: any[]) => void;
 }) {
   const { data: session } = useSession();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -28,6 +36,8 @@ export function ChatInput({
     previewUrl?: string;
     uploading?: boolean;
     original?: File;
+    size?: number;
+    type?: string;
   };
 
   const [files, setFiles] = useState<UploadedFile[]>([]);
@@ -55,9 +65,10 @@ export function ChatInput({
   // Upload via local route; server route will forward to Dify API
   const uploadFileToServer = async (file: File) => {
     const endpoint = `/api/dify/files/upload`;
+    const userId = session?.user?.id as string | undefined;
     const form = new FormData();
     form.append('file', file);
-    form.append('user', 'web-client');
+    form.append('user', userId || '');
 
     // バックエンドAPI呼び出し時は必ず x-tenant-id ヘッダーを付与（RLS・テナント分離のため必須）
     const headers: Record<string, string> = {};
@@ -72,7 +83,8 @@ export function ChatInput({
     if (!res.ok) throw new Error('upload failed');
     const data = await res.json();
     const previewUrl = data?.preview_url || data?.source_url || data?.previewUrl || data?.preview_url;
-    return { id: data.id, name: data.name || file.name, previewUrl };
+    const type = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file.name) ? 'image' : 'document';
+    return { id: data.id, name: data.name || file.name, previewUrl, size: data.size || file.size, type };
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -81,7 +93,11 @@ export function ChatInput({
 
     // append placeholders and start upload
     const placeholders: UploadedFile[] = incoming.map(f => ({ name: f.name, uploading: true, original: f }));
-    setFiles(prev => [...prev, ...placeholders]);
+    setFiles(prev => {
+      const newFiles = [...prev, ...placeholders];
+      setTimeout(() => onFilesChange(newFiles), 0);
+      return newFiles;
+    });
     onUpload?.(e.target.files);
 
     // upload each file and update preview when done
@@ -93,9 +109,12 @@ export function ChatInput({
           const i = prev.findIndex(p => p.original === f || (p.name === f.name && p.uploading));
           if (i === -1) return prev;
           const copy = [...prev];
-          copy[i] = { ...copy[i], id: uploaded.id, previewUrl: uploaded.previewUrl, uploading: false };
+          copy[i] = { ...copy[i], id: uploaded.id, previewUrl: uploaded.previewUrl, uploading: false, size: uploaded.size, type: uploaded.type };
+          setTimeout(() => onFilesChange(copy), 0);
           return copy;
         });
+        // add to fileIds list
+        addFileId(uploaded.id);
         // after upload, update parent with new FileList (optional)
         const currentFiles = fileListFromArray(files.map(x => x.original!).filter(Boolean));
         onUpload?.(currentFiles);
@@ -123,19 +142,13 @@ export function ChatInput({
     const target = files[index];
     // if uploaded to server, call delete route
     if (target?.id) {
-      try {
-        // バックエンドAPI呼び出し時は必ず x-tenant-id ヘッダーを付与
-        const headers: Record<string, string> = {};
-        const tenantId = session?.user?.tenantId as string | undefined;
-        headers['x-tenant-id'] = tenantId || '';
-        await fetch(`/api/dify/files/${target.id}`, { method: 'DELETE', headers });
-      } catch (e) {
-        // ignore failures for now
-      }
+      // remove from fileIds list
+      removeFileId(target.id);
     }
 
     const next = files.filter((_, i) => i !== index);
     setFiles(next);
+    setTimeout(() => onFilesChange(next), 0);
     const originals = next.map(f => f.original).filter(Boolean) as File[];
     const fl = fileListFromArray(originals);
     onUpload?.(fl);
@@ -148,6 +161,8 @@ export function ChatInput({
     onSend();
     // clear attachments after send
     setFiles([]);
+    setTimeout(() => onFilesChange([]), 0);
+    clearFiles();
     onUpload?.(null);
   };
 
@@ -162,34 +177,77 @@ export function ChatInput({
     <div className="w-full bg-transparent p-4">
       <div className="max-w-2xl mx-auto w-full">
         {/* 入力エリア（プレビューを含めて一つの枠に見せる） */}
-        <div className="relative flex flex-col gap-2 rounded-xl p-2 bg-chatbot-bg transition-all border border-divider-regular">
+        <div className="relative flex flex-col gap-2 rounded-xl p-2 bg-white transition-all border border-divider-regular">
           {files.length > 0 && (
             <div className="w-full">
               <div className="flex flex-wrap gap-2 p-1">
-                {files.map((file, index) => (
-                  <div key={index} className="relative flex-shrink-0 w-16 h-16 bg-chat-bubble-bg/80 rounded-md border-0 flex items-center justify-center overflow-hidden p-0">
-                    {file.previewUrl ? (
-                      <img
-                        src={file.previewUrl}
-                        alt={file.name}
-                        className="object-cover w-full h-full"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    ) : (
-                      <div className="w-10 h-10 bg-chat-bubble-bg rounded flex items-center justify-center text-xs">ファイル</div>
-                    )}
-                    {file.uploading && (
-                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center text-white text-xs">アップロード中...</div>
-                    )}
-                    <button
-                      onClick={() => removeFile(index)}
-                      className="absolute top-1 right-1 text-text-tertiary hover:text-text-negative"
-                      aria-label="削除"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
+                {files.map((file, index) => {
+                  const isImage = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file.name);
+                  if (isImage) {
+                    return (
+                      <div key={index} className="relative flex-shrink-0 w-16 h-16 bg-chat-bubble-bg/80 rounded-md border-0 flex items-center justify-center overflow-hidden p-0">
+                        {file.previewUrl ? (
+                          <img
+                            src={file.previewUrl}
+                            alt={file.name}
+                            className="object-cover w-full h-full"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        ) : (
+                          <div className="w-10 h-10 bg-chat-bubble-bg rounded flex items-center justify-center text-xs">ファイル</div>
+                        )}
+                        {file.uploading && (
+                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center text-white text-xs">アップロード中...</div>
+                        )}
+                        <button
+                          onClick={() => removeFile(index)}
+                          className="absolute top-1 right-1 text-text-tertiary hover:text-text-negative"
+                          aria-label="削除"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    );
+                  } else {
+                    // PDFなどのファイル
+                    const formatSize = (bytes: number) => {
+                      if (bytes < 1024) return `${bytes} B`;
+                      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+                      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+                    };
+                    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+                    const iconColor = ext === 'pdf' ? '#EA3434' : '#6B7280'; // PDFは赤、それ以外はグレー
+                    return (
+                      <div key={index} className="group/file-item relative h-[68px] w-[144px] rounded-lg border-[0.5px] border-components-panel-border bg-components-card-bg p-2 shadow-xs hover:bg-components-card-bg-alt">
+                        <button
+                          type="button"
+                          onClick={() => removeFile(index)}
+                          className="btn disabled:btn-disabled btn-secondary btn-medium absolute -right-1.5 -top-1.5 z-[11] hidden h-5 w-5 rounded-full p-0 group-hover/file-item:flex"
+                        >
+                          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" className="remixicon h-4 w-4 text-components-button-secondary-text">
+                            <path d="M11.9997 10.5865L16.9495 5.63672L18.3637 7.05093L13.4139 12.0007L18.3637 16.9504L16.9495 18.3646L11.9997 13.4149L7.04996 18.3646L5.63574 16.9504L10.5855 12.0007L5.63574 7.05093L7.04996 5.63672L11.9997 10.5865Z"></path>
+                          </svg>
+                        </button>
+                        <div className="system-xs-medium mb-1 line-clamp-2 h-8 cursor-pointer break-all text-text-tertiary" title={file.name}>
+                          {file.name}
+                        </div>
+                        <div className="relative flex items-center justify-between">
+                          <div className="system-2xs-medium-uppercase flex items-center text-text-tertiary">
+                            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" className="remixicon shrink-0 size-4 mr-1" style={{ color: iconColor }}>
+                              <path d="M3.9985 2C3.44749 2 3 2.44405 3 2.9918V21.0082C3 21.5447 3.44476 22 3.9934 22H20.0066C20.5551 22 21 21.5489 21 20.9925L20.9997 7L16 2H3.9985ZM10.5 7.5H12.5C12.5 9.98994 14.6436 12.6604 17.3162 13.5513L16.8586 15.49C13.7234 15.0421 10.4821 16.3804 7.5547 18.3321L6.3753 16.7191C7.46149 15.8502 8.50293 14.3757 9.27499 12.6534C10.0443 10.9373 10.5 9.07749 10.5 7.5ZM11.1 13.4716C11.3673 12.8752 11.6043 12.2563 11.8037 11.6285C12.2754 12.3531 12.8553 13.0182 13.5102 13.5953C12.5284 13.7711 11.5666 14.0596 10.6353 14.4276C10.8 14.1143 10.9551 13.7948 11.1 13.4716Z"></path>
+                            </svg>
+                            {ext}
+                            <div className="mx-1">·</div>
+                            {file.size ? formatSize(file.size) : ''}
+                          </div>
+                        </div>
+                        {file.uploading && (
+                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center text-white text-xs rounded-lg">アップロード中...</div>
+                        )}
+                      </div>
+                    );
+                  }
+                })}
               </div>
             </div>
           )}
@@ -215,6 +273,7 @@ export function ChatInput({
                   ref={fileInputRef}
                   type="file"
                   multiple
+                  accept="image/*,.pdf"
                   className="hidden"
                   onChange={handleFileChange}
                 />

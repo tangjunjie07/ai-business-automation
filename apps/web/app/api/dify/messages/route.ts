@@ -12,6 +12,7 @@ export async function GET(req: NextRequest) {
   const apiKey = getDifyKey();
   const difyBase = dify.apiBase || 'https://api.dify.ai';
   const url = `${difyBase}/messages?conversation_id=${conversationId}&user=${userId}`;
+  console.log('[DIFY API] GET url:', url);
   const difyRes = await fetch(url, {
     method: 'GET',
     headers: {
@@ -29,4 +30,4 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(data, { status: difyRes.status });
 }
 
-export const runtime = 'nodejs'
+// runtime declaration removed — using default runtime
