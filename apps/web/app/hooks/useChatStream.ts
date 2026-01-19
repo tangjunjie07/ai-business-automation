@@ -6,6 +6,19 @@ export interface Message {
   message_files?: UploadedFile[];
 }
 
+interface DifyMessage {
+  id: string;
+  conversation_id: string;
+  inputs: Record<string, unknown>;
+  query: string;
+  answer: string;
+  message_files: UploadedFile[];
+  created_at: number;
+  feedback?: {
+    rating: 'like' | 'dislike';
+  };
+  retriever_resources: RetrieverResource[];
+}
 
 export const useChatStream = () => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -238,7 +251,7 @@ export const useChatStream = () => {
     const data = await res.json();
     if (Array.isArray(data.data)) {
       // Dify APIレスポンスをチャット形式に変換: 各アイテムからユーザーとアシスタントのメッセージを作成
-      const messages: Message[] = data.data.flatMap((item: any) => [
+      const messages: Message[] = data.data.flatMap((item: DifyMessage) => [
         { role: 'user' as const, content: item.query, message_files: item.message_files },
         { role: 'assistant' as const, content: item.answer }
       ]);

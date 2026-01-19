@@ -23,7 +23,7 @@ declare global {
 
   interface DifyChatRequest {
     query: string;
-    inputs?: Record<string, any>;
+    inputs?: Record<string, unknown>;
     response_mode?: 'streaming' | 'blocking';
     user?: string;
     conversation_id?: string;
@@ -68,20 +68,6 @@ declare global {
     updated_at: number;
   }
 
-  interface DifyMessage {
-    id: string;
-    conversation_id: string;
-    inputs: Record<string, unknown>;
-    query: string;
-    answer: string;
-    message_files: UploadedFile[];
-    created_at: number;
-    feedback?: {
-      rating: 'like' | 'dislike';
-    };
-    retriever_resources: RetrieverResource[];
-  }
-
   interface DifyChatResponse {
     event: string;
     task_id: string;
@@ -96,6 +82,20 @@ declare global {
     };
     created_at: number;
   }
+}
+
+export interface DifyMessage {
+  id: string;
+  conversation_id: string;
+  inputs: Record<string, unknown>;
+  query: string;
+  answer: string;
+  message_files: UploadedFile[];
+  created_at: number;
+  feedback?: {
+    rating: 'like' | 'dislike';
+  };
+  retriever_resources: RetrieverResource[];
 }
 
 export {}

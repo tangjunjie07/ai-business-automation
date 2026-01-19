@@ -136,7 +136,8 @@ export function MessageList({ messages, session, currentTask, isLoading, streamE
                           const match = /language-(\w+)/.exec(className || '');
                           const isInline = node?.tagName === 'code' && !match;
                           return !isInline && match ? (
-                            <SyntaxHighlighter style={oneLight} language={match[1]} PreTag="div" {...props}>
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            <SyntaxHighlighter style={oneLight as any} language={match[1]} PreTag="div" {...(props as any)}>
                               {String(children).replace(/\n$/, '')}
                             </SyntaxHighlighter>
                           ) : (
@@ -264,7 +265,8 @@ export function MessageList({ messages, session, currentTask, isLoading, streamE
                             const match = /language-(\w+)/.exec(className || '');
                             const isInline = node?.tagName === 'code' && !match;
                             return !isInline && match ? (
-                              <SyntaxHighlighter style={oneLight} language={match[1]} PreTag="div" {...props}>
+                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                              <SyntaxHighlighter style={oneLight as any} language={match[1]} PreTag="div" {...(props as any)}>
                                 {String(children).replace(/\n$/, '')}
                               </SyntaxHighlighter>
                             ) : (
