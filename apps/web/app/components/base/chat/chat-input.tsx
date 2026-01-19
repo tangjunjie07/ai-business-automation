@@ -14,7 +14,7 @@ type Props = {
   placeholder?: string
 }
 
-export default function ChatInput({ value, onChange, onSend, onUpload, isStreaming = false, placeholder = 'メッセージを入力...' }: Props) {
+export default function ChatInput({ value, onChange, onSend, onAbort, onUpload, isStreaming = false, placeholder = 'メッセージを入力...' }: Props) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
 

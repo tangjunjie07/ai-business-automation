@@ -56,7 +56,7 @@ export function AlertDialog({
         </div>
       </div>
     </div>,
-    typeof window !== 'undefined' ? document.body : null
+    typeof window !== 'undefined' ? document.body : document.createElement('div')
   )
 }
 

@@ -5,7 +5,6 @@ import { useSession } from 'next-auth/react';
 import { Paperclip, Send, Square, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Image from 'next/image';
-import { UploadedFile } from '@/types/dify';
 
 export function ChatInput({
   value,
@@ -17,7 +16,9 @@ export function ChatInput({
   removeFileId,
   clearFiles,
   onFilesChange,
-  onAbort
+  onAbort,
+  streamError,
+  onRetry
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -29,6 +30,8 @@ export function ChatInput({
   clearFiles: () => void;
   onFilesChange: (files: UploadedFile[]) => void;
   onAbort?: () => void;
+  streamError?: string | null;
+  onRetry?: () => void;
 }) {
   const { data: session } = useSession();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -57,6 +60,27 @@ export function ChatInput({
 
   // Upload via local route; server route will forward to Dify API
   const uploadFileToServer = async (file: File) => {
+    // ファイルタイプチェック
+    const allowedTypes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      'application/pdf',
+      'text/plain',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      throw new Error(`サポートされていないファイル形式です: ${file.type}`);
+    }
+
+    // ファイルサイズチェック (10MB)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new Error(`ファイルサイズが大きすぎます。最大10MBまでです。`);
+    }
+
     const endpoint = `/api/dify/files/upload`;
     const userId = session?.user?.id as string | undefined;
     const form = new FormData();
@@ -73,7 +97,12 @@ export function ChatInput({
       headers: headers,
       body: form,
     });
-    if (!res.ok) throw new Error('upload failed');
+
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || `アップロードに失敗しました (${res.status})`);
+    }
+
     const data = await res.json();
     const previewUrl = data?.preview_url || data?.source_url || data?.previewUrl || data?.preview_url;
     const type = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file.name) ? 'image' : 'document';
@@ -84,8 +113,39 @@ export function ChatInput({
     const incoming = e.target.files ? Array.from(e.target.files) : [];
     if (incoming.length === 0) return;
 
+    // ファイル数の制限チェック
+    const maxFiles = 5;
+    if (files.length + incoming.length > maxFiles) {
+      toast.error(`一度にアップロードできるファイルは${maxFiles}個までです`);
+      return;
+    }
+
+    // 各ファイルの事前検証
+    for (const file of incoming) {
+      const allowedTypes = [
+        'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+        'application/pdf',
+        'text/plain',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      ];
+
+      if (!allowedTypes.includes(file.type)) {
+        toast.error(`サポートされていないファイル形式です: ${file.name}`);
+        return;
+      }
+
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        toast.error(`ファイルサイズが大きすぎます: ${file.name} (最大10MB)`);
+        return;
+      }
+    }
+
     // append placeholders and start upload
-    const placeholders: UploadedFile[] = incoming.map(f => ({ name: f.name, uploading: true, original: f }));
+    const placeholders: UploadedFile[] = incoming.map(f => ({ name: f.name, uploading: true, original: f, size: f.size, type: f.type.includes('image') ? 'image' : 'document' }));
     setFiles(prev => {
       const newFiles = [...prev, ...placeholders];
       setTimeout(() => onFilesChange(newFiles), 0);
@@ -111,9 +171,13 @@ export function ChatInput({
         // after upload, update parent with new FileList (optional)
         const currentFiles = fileListFromArray(files.map(x => x.original!).filter(Boolean));
         onUpload?.(currentFiles);
-      } catch (_) {
-        // mark as not uploading and keep name, you may surface error
-        setFiles(prev => prev.map(p => (p.original === f ? { ...p, uploading: false } : p)));
+      } catch (error) {
+        // エラーメッセージを表示
+        const errorMessage = error instanceof Error ? error.message : 'アップロードに失敗しました';
+        toast.error(`${f.name}: ${errorMessage}`);
+
+        // 失敗したファイルをリストから削除
+        setFiles(prev => prev.map(p => (p.original === f ? { ...p, uploading: false, error: errorMessage } : p)));
       }
     });
 
@@ -195,6 +259,11 @@ export function ChatInput({
                         {file.uploading && (
                           <div className="absolute inset-0 bg-black/30 flex items-center justify-center text-white text-xs">アップロード中...</div>
                         )}
+                        {file.error && (
+                          <div className="absolute inset-0 bg-red-500/80 flex items-center justify-center text-white text-xs p-1 text-center">
+                            エラー: {file.error}
+                          </div>
+                        )}
                         <button
                           onClick={() => removeFile(index)}
                           className="absolute top-1 right-1 text-text-tertiary hover:text-text-negative"
@@ -235,6 +304,11 @@ export function ChatInput({
                           <span className="input-file-size">
                             {file.size ? formatSize(file.size) : ''}
                           </span>
+                          {file.error && (
+                            <span className="text-red-500 text-xs mt-1 block">
+                              エラー: {file.error}
+                            </span>
+                          )}
                         </div>
 
                         <button
@@ -293,6 +367,30 @@ export function ChatInput({
               </button>
             </div>
           </div>
+
+          {/* エラー表示とリトライボタン */}
+          {streamError && !isLoading && (
+            <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm text-red-700">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <span>送信に失敗しました</span>
+                </div>
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                  >
+                    再試行
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 text-sm text-red-600">{streamError}</p>
+            </div>
+          )}
 
         </div>
       </div>

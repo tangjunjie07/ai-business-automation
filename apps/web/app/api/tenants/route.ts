@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '../auth/[...nextauth]/route'
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Tenant } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
 import bcrypt from 'bcryptjs'
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
         return { tenant, adminUser }
       })
 
-      const { tenant, adminUser } = result as { tenant: unknown; adminUser: unknown }
+      const { tenant, adminUser } = result as { tenant: Tenant; adminUser: unknown }
 
       return NextResponse.json({
         tenant: {

@@ -19,6 +19,7 @@ API実装する際は、必ず下記のAPIドキュメント（公式仕様）�
 ## テスト・検証
 - `npm run validate:ai-rules` でAI実装ルール違反を自動検出。
 - フロントエンドの動作確認は `apps/web/` 配下で `npm run dev` を推奨。
+- AIフロントエンド実装完了後は `npx tsc --noEmit` でTypeScriptエラーを解消すること。
 
 
 ## 注意事項

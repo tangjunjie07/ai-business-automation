@@ -8,12 +8,11 @@ import { ConfigPanel } from '@/components/config-panel'
 import { MessageList } from '@/components/message-list'
 import { ChatInput } from '@/components/chat-input'
 import { useChatStream } from '@/hooks/useChatStream'
-import { DifyConversation } from '@/types/dify'
 
 // バックエンドAPI呼び出し時は必ず x-tenant-id ヘッダーを付与（RLS・テナント分離のため必須）
 
 // 履歴型
-type ChatSession = { difyId: string; title: string; isPinned: boolean; updatedAt: string };
+type ChatSession = { difyId: string; title: string; isPinned: boolean; updatedAt: number };
 
 type UploadedFile = {
   id?: string;
@@ -81,7 +80,7 @@ export default function ChatPage() {
         // Difyに存在しDBにないIDを抽出（挿入）
         const toInsert = difyIds.filter((id: string) => !dbIds.includes(id));
         if (toInsert.length > 0) {
-          const conversationsToInsert = toInsert.map(id => {
+          const conversationsToInsert = toInsert.map((id: string) => {
             const conv = difyConversations.find((c: { id: string; name: string }) => c.id === id);
             return conv ? { conversation_id: id, title: conv.name } : null;
           }).filter(Boolean) as Array<{conversation_id: string, title: string}>;
@@ -116,9 +115,10 @@ export default function ChatPage() {
           setSessions(data.sessions);
           // sessions取得後にlastIdをチェック
           const lastId = typeof window !== 'undefined' ? localStorage.getItem('last_conversation_id') : null;
-          if (lastId && data.sessions.some(s => s.difyId === lastId)) {
-              setConversationId(lastId);
-              fetchHistory(lastId, tid, uid);
+          if (lastId && data.sessions.some((s: { difyId: string }) => s.difyId === lastId)) {
+              const validLastId = lastId; // TypeScriptの型チェックを通過させる
+              setConversationId(validLastId);
+              fetchHistory(validLastId, tid ?? '', uid ?? '');
           } else {
             localStorage.setItem('last_conversation_id', '')
             // 存在しない場合はlatestを取得
@@ -132,7 +132,7 @@ export default function ChatPage() {
               .then(data => {
                 if (data.conversation_id) {
                   setConversationId(data.conversation_id);
-                  fetchHistory(data.conversation_id, tid, uid);
+                  fetchHistory(data.conversation_id, tid ?? '', uid ?? '');
                   if (typeof window !== 'undefined') localStorage.setItem('last_conversation_id', data.conversation_id);
                 }
               });
@@ -149,9 +149,9 @@ export default function ChatPage() {
       setConversationId(newSession.difyId);
       if (typeof window !== 'undefined') localStorage.setItem('last_conversation_id', newSession.difyId);
     };
-    window.addEventListener('new-chat-created', handleNewChat);
+    window.addEventListener('new-chat-created' as any, handleNewChat as any);
     return () => {
-      window.removeEventListener('new-chat-created', handleNewChat);
+      window.removeEventListener('new-chat-created' as any, handleNewChat as any);
     };
   }, [session, status, router, fetchHistory]); // 初期化処理とイベントリスナーをまとめて管理
 
@@ -273,9 +273,9 @@ export default function ChatPage() {
                 // 選択中の会話ならヘッダーも更新
                 if (conversationId === id) setHeaderTitle(newName);
               }}
-              tenantId={tenantId}
-              userId={userId}
-              currentSessionId={conversationId}
+              tenantId={tenantId ?? undefined}
+              userId={userId ?? undefined}
+              currentSessionId={conversationId ?? undefined}
             />
           </div>
         )}
@@ -351,7 +351,7 @@ export default function ChatPage() {
         <div className="flex-1 flex flex-col min-h-0 relative h-full z-10">
           <div className="flex-1 overflow-y-auto pb-60 chat-scrollbar">
             <div className="max-w-3xl mx-auto w-full p-4 md:p-8 space-y-6 min-h-[200px] flex flex-col justify-end">
-              <MessageList messages={messages} session={session} currentTask={currentTask} isLoading={isLoading} />
+              <MessageList messages={messages} session={session ?? undefined} currentTask={currentTask} isLoading={isLoading} streamError={streamError} />
               {messages.length === 0 && (
                 <div className="text-center text-gray-400 py-12 select-none">私は高度な専門知識を持つプロの経理担当AIです。
 提供された請求書データ（OCR原文と構造化抽出結果）に基づき、最も適切な「勘定科目」と「補助科目」を特定し、仕訳データを作成することができます。</div>
@@ -374,6 +374,17 @@ export default function ChatPage() {
                     clearFiles={clearFiles}
                     onFilesChange={setFiles}
                     onAbort={stopGeneration}
+                    streamError={streamError}
+                    onRetry={() => {
+                      if (input.trim() && tenantId) {
+                        sendMessage(
+                          input,
+                          conversationId && conversationId !== 'null' ? conversationId : undefined,
+                          tenantId,
+                          session?.user?.id
+                        );
+                      }
+                    }}
                   />
                 </div>
               </div>

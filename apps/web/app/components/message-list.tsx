@@ -5,9 +5,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import toast from 'react-hot-toast';
 import config from '@/config';
-import { Session } from '@/types/next-auth';
+import { Session } from 'next-auth';
 import Image from 'next/image';
-import { UploadedFile } from '@/types/dify';
 
 export interface Message {
   role: 'user' | 'assistant';
@@ -15,7 +14,7 @@ export interface Message {
   message_files?: UploadedFile[];
 }
 
-export function MessageList({ messages, session, currentTask, isLoading }: { messages: Message[]; session?: Session; currentTask?: string; isLoading?: boolean }) {
+export function MessageList({ messages, session, currentTask, isLoading, streamError }: { messages: Message[]; session?: Session; currentTask?: string; isLoading?: boolean; streamError?: string | null }) {
   const userInitials = (() => {
     const name = session?.user?.name || session?.user?.email || '';
     const parts = name.split(' ');
@@ -48,6 +47,7 @@ export function MessageList({ messages, session, currentTask, isLoading }: { mes
                             return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
                           };
                           const handleDownload = async (file: UploadedFile) => {
+                            if (!file.url) return;
                             try {
                               const response = await fetch(file.url);
                               if (!response.ok) {
@@ -75,7 +75,7 @@ export function MessageList({ messages, session, currentTask, isLoading }: { mes
                                   <Image
                                     className="h-full w-full object-cover cursor-pointer"
                                     alt="Preview"
-                                    src={file.url}
+                                    src={file.url ?? ""}
                                     width={68}
                                     height={68}
                                   />
@@ -171,6 +171,7 @@ export function MessageList({ messages, session, currentTask, isLoading }: { mes
                             return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
                           };
                           const handleDownload = async (file: UploadedFile) => {
+                            if (!file.url) return;
                             try {
                               const response = await fetch(file.url);
                               if (!response.ok) {
@@ -198,7 +199,7 @@ export function MessageList({ messages, session, currentTask, isLoading }: { mes
                                   <Image
                                     className="h-full w-full object-cover cursor-pointer"
                                     alt="Preview"
-                                    src={file.url}
+                                    src={file.url ?? ""}
                                     width={68}
                                     height={68}
                                   />
@@ -293,6 +294,17 @@ export function MessageList({ messages, session, currentTask, isLoading }: { mes
         <div className="mt-2 text-sm text-gray-500 flex items-center gap-2">
           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500"></div>
           {currentTask}
+        </div>
+      )}
+      {streamError && (
+        <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <span className="font-medium">エラーが発生しました</span>
+          </div>
+          <p className="mt-1">{streamError}</p>
         </div>
       )}
     </div>
