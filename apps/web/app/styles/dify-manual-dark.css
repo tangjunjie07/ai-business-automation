@@ -10,6 +10,10 @@ html[data-theme="dark"] {
             rgba(24, 24, 27, 0.60) 100%);
     /* truncated: other theme variables omitted for brevity */
     --color-background-gradient-bg-fill-chat-bubble-bg-3: #27314d;
+    --color-state-base-active: rgb(21 90 239 / 0.14);
+    --color-state-base-hover: rgb(200 206 218 / 0.08);
+    --color-text-accent: #5289ff;
+
 }
 
 /* Utility class fallbacks for components that use Dify Tailwind names */

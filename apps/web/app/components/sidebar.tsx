@@ -9,7 +9,7 @@ import config from '@/config'
 
 
 // sessions: {difyId, title, isPinned, updatedAt}[]
-export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onNewChat, onRename, messages = [], tenantId, userId }: { sessions?: any[]; onSelect?: (id: string) => void; onClose?: () => void; onPin?: (id: string) => void; onDelete?: (id: string) => void; onNewChat?: () => void; onRename?: (id: string, name: string) => void; messages?: any[]; tenantId?: string; userId?: string }) {
+export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onNewChat, onRename, messages = [], tenantId, userId, currentSessionId }: { sessions?: any[]; onSelect?: (id: string) => void; onClose?: () => void; onPin?: (id: string) => void; onDelete?: (id: string) => void; onNewChat?: () => void; onRename?: (id: string, name: string) => void; messages?: any[]; tenantId?: string; userId?: string; currentSessionId?: string }) {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [renameModal, setRenameModal] = useState<{ show: boolean; id: string | null; name: string }>({ show: false, id: null, name: '' });
   const [renameLoading, setRenameLoading] = useState(false);
@@ -84,6 +84,7 @@ export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onN
         });
         setLocalSessions(prev => prev.filter(s => s.difyId !== id));
         if (onDelete) onDelete(id);
+        // 削除後に新規チャットに切り替えるのは選択済みの場合のみ（onDeleteコールバック内で処理）
       }
     } catch (e) {
       // ignore; UI will remain stable
@@ -111,7 +112,7 @@ export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onN
       <div className="shrink-0 px-3 py-4">
         <button
           type="button"
-          className="btn btn-secondary-accent btn-medium w-full justify-center flex items-center gap-2"
+          className="w-full justify-center flex items-center gap-2 py-2 px-4 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-900 border border-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-white dark:border-gray-600 transition-all"
           onClick={() => {
             // 新規チャットボタン押下時はonNewChatコールバックを直接呼ぶ
             onNewChat?.();
@@ -131,7 +132,7 @@ export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onN
               <div className="system-xs-medium text-text-tertiary mb-2">ピン留め済み</div>
               <div className="space-y-0.5">
                 {pinnedItems.map(item => (
-                  <div key={item.difyId} className={`system-sm-medium group relative flex cursor-pointer rounded-lg p-1 pl-3 hover:bg-state-base-hover`} onClick={() => onSelect?.(item.difyId)}>
+                  <div key={item.difyId} className={`system-sm-medium group relative flex cursor-pointer rounded-lg p-1 pl-3 ${item.difyId === currentSessionId ? 'bg-state-base-active text-text-accent' : 'hover:bg-state-base-hover'}`} onClick={() => onSelect?.(item.difyId)}>
                     <div className="grow truncate p-1 pl-0 group-hover:text-[color:var(--brand)]" title={item.title}>{item.title}</div>
                     <div className="shrink-0">
                       {item.difyId !== 'new' && (
@@ -168,7 +169,7 @@ export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onN
           )}
 
           {unpinnedItems.map((item, idx) => (
-            <div key={item.difyId || `new-${idx}`} className={`system-sm-medium group relative flex cursor-pointer rounded-lg p-1 pl-3 hover:bg-state-base-hover`} onClick={() => onSelect?.(item.difyId)}>
+            <div key={item.difyId || `new-${idx}`} className={`system-sm-medium group relative flex cursor-pointer rounded-lg p-1 pl-3 ${item.difyId === currentSessionId ? 'bg-state-base-active text-text-accent' : 'hover:bg-state-base-hover'}`} onClick={() => onSelect?.(item.difyId)}>
               <div className="grow truncate p-1 pl-0 group-hover:text-[color:var(--brand)]" title={item.title}>{item.title}</div>
               <div className="shrink-0">
                 {item.difyId !== 'new' && (

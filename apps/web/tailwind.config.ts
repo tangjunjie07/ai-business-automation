@@ -15,6 +15,11 @@ const config: Config = {
         'chat-bubble-bg': 'var(--color-chat-bubble-bg)',
         'chat-input-mask': 'var(--color-chat-input-mask)',
       },
+      colors: {
+        'state-base-active': 'var(--color-state-base-active)',
+        'state-base-hover': 'var(--color-state-base-hover)',
+        'text-accent': 'var(--color-text-accent)',
+      },
     },
   },
   plugins: [typography],

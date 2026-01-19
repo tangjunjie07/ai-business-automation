@@ -50,14 +50,15 @@ export default function ChatPage() {
           headers: { 'x-user-id': uid || '', 'x-tenant-id': tid || '' }
         });
         const difyData = await difyRes.json();
-        const difyIds = Array.isArray(difyData.data) ? difyData.data.map((c: any) => c.id) : [];
+        const difyConversations = Array.isArray(difyData.data) ? difyData.data : [];
+        const difyIds = difyConversations.map((c: any) => c.id);
         // DBから全会話取得
         const dbRes = await fetch('/api/dify/db/conversations', {
           headers: { 'x-user-id': uid || '', 'x-tenant-id': tid || '' }
         });
         const dbData = await dbRes.json();
         const dbIds = Array.isArray(dbData.data) ? dbData.data.map((c: any) => c.id) : [];
-        // DBに存在しDifyにないIDを抽出
+        // DBに存在しDifyにないIDを抽出（削除）
         const toDelete = dbIds.filter((id: string) => !difyIds.includes(id));
         if (toDelete.length > 0) {
           await fetch('/api/dify/db/conversations', {
@@ -65,6 +66,25 @@ export default function ChatPage() {
             headers: { 'Content-Type': 'application/json', 'x-user-id': uid || '', 'x-tenant-id': tid || '' },
             body: JSON.stringify({ ids: toDelete })
           });
+        }
+        // Difyに存在しDBにないIDを抽出（挿入）
+        const toInsert = difyIds.filter((id: string) => !dbIds.includes(id));
+        if (toInsert.length > 0) {
+          const conversationsToInsert = toInsert.map(id => {
+            const conv = difyConversations.find((c: any) => c.id === id);
+            return conv ? { conversation_id: id, title: conv.name } : null;
+          }).filter(Boolean) as Array<{conversation_id: string, title: string}>;
+          if (conversationsToInsert.length > 0) {
+            await fetch('/api/dify/db/chat-sessions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-tenant-id': tid || '',
+                'x-user-id': uid || ''
+              },
+              body: JSON.stringify({ conversations: conversationsToInsert })
+            });
+          }
         }
       } catch (e) {
         // エラーは握りつぶす（同期失敗時も画面は進める）
@@ -244,6 +264,7 @@ export default function ChatPage() {
               }}
               tenantId={tenantId}
               userId={userId}
+              currentSessionId={conversationId}
             />
           </div>
         )}

@@ -8,6 +8,9 @@
   --muted: #6b7280;
   --brand: #0ea5a4;
   --surface: #f8fafc;
+  --color-state-base-active: rgb(21 90 239 / 0.08);
+  --color-state-base-hover: rgb(200 206 218 / 0.2);
+  --color-text-accent: #155aef;
 }
 
 @theme inline {
@@ -24,7 +27,21 @@
     --muted: #94a3b8;
     --brand: #22c1c3;
     --surface: #071427;
+    --color-state-base-active: rgb(21 90 239 / 0.14);
+    --color-state-base-hover: rgb(200 206 218 / 0.08);
+    --color-text-accent: #5289ff;
   }
+}
+
+html.dark {
+  --background: #071024;
+  --foreground: #e6eef8;
+  --muted: #94a3b8;
+  --brand: #22c1c3;
+  --surface: #071427;
+  --color-state-base-active: rgb(21 90 239 / 0.14);
+  --color-state-base-hover: rgb(200 206 218 / 0.08);
+  --color-text-accent: #5289ff;
 }
 
 * { box-sizing: border-box }
@@ -188,4 +205,133 @@ html[data-theme="dark"] {
   border: 1px solid #eee;
   cursor: pointer; /* クリックで拡大させる場合など */
 }
+
+/* ファイルプレビュー全体のコンテナ */
+.file-preview-item {
+  display: flex;
+  align-items: center; /* 垂直方向中央 */
+  padding: 8px 12px;
+  background-color: rgba(255, 255, 255, 0.2); /* 背景を少し透過 */
+  border-radius: 12px;
+  width: 240px; /* 横幅を固定して安定させる */
+  gap: 12px;
+  position: relative;
+}
+
+/* 左側のアイコン */
+.file-icon-wrapper {
+  flex-shrink: 0; /* アイコンが潰れないように固定 */
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border-radius: 8px;
+}
+
+/* 右側のテキストエリア（上下に並べる） */
+.file-info-wrapper {
+  display: flex;
+  flex-direction: column; /* 上下に配置 */
+  min-width: 0; /* truncate(三点リーダー)を効かせるために必須 */
+  flex: 1;
+}
+
+/* ファイル名：長すぎる場合に「...」にする */
+.file-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; /* 三点リーダーを表示 */
+}
+
+/* ファイルサイズ：名前の下に配置 */
+.file-size {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: 2px;
+}
+
+/* ファイルプレビューカード全体の調整 */
+.file-upload-card {
+  display: flex;
+  align-items: center;
+  /* 背景を少し暗めのグレーにするか、枠線をしっかり付ける */
+  background-color: #f5f5f5 !important; 
+  border: 1px solid #e0e0e0 !important;
+  border-radius: 8px;
+  padding: 8px 12px;
+  gap: 12px;
+}
+
+/* ファイル名の文字色を「白」から「濃いグレー」へ */
+.file-upload-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151 !important; /* Tailwindの gray-700 相当。これでハッキリ見えます */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ファイルサイズの文字色を調整 */
+.file-upload-size {
+  font-size: 11px;
+  color: #6b7280 !important; /* Tailwindの gray-500 相当 */
+  margin-top: 2px;
+}
+
+/* PDFアイコンが白背景で見えにくい場合は、アイコンの背景も調整 */
+.file-upload-icon {
+  background-color: #ffffff;
+  border: 1px solid #f3f4f6;
+  border-radius: 4px;
+  padding: 4px;
+}
+
+/* 入力エリア内のファイルカード全体 */
+.input-file-preview {
+  display: flex !important;
+  align-items: center !important;
+  background-color: #f3f4f6 !important; /* 薄いグレー背景にして白文字を避ける */
+  border: 1px solid #d1d5db !important;
+  border-radius: 8px !important;
+  padding: 6px 10px !important;
+  gap: 10px !important;
+  width: fit-content !important;
+  max-width: 240px !important;
+  position: relative !important;
+}
+
+/* ファイル名とサイズのテキスト塊 */
+.input-file-info {
+  display: flex !important;
+  flex-direction: column !important; /* 上下に並べる */
+  justify-content: center !important;
+  min-width: 0 !important;
+}
+
+/* ファイル名の文字色を黒系に固定 */
+.input-file-name {
+  color: #1f2937 !important; /* 濃いグレー。これで白飛びしません */
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important; /* 長い名前は...にする */
+}
+
+/* サイズの文字色 */
+.input-file-size {
+  color: #6b7280 !important;
+  font-size: 10px !important;
+}
+
+/* Utility class fallbacks for state colors */
+.bg-state-base-active { background-color: var(--color-state-base-active) !important; }
+.bg-state-base-hover { background-color: var(--color-state-base-hover) !important; }
+.text-text-accent { color: var(--color-text-accent) !important; }
 

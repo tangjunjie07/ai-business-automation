@@ -3,6 +3,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { Paperclip, Send, X } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export function ChatInput({
   value,
@@ -156,6 +157,7 @@ export function ChatInput({
 
   const handleSend = () => {
     if (!value || !value.trim()) {
+      toast.error('質問は必須です。');
       return;
     }
     onSend();
@@ -215,36 +217,43 @@ export function ChatInput({
                       if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
                       return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
                     };
-                    const ext = file.name.split('.').pop()?.toLowerCase() || '';
-                    const iconColor = ext === 'pdf' ? '#EA3434' : '#6B7280'; // PDFは赤、それ以外はグレー
                     return (
-                      <div key={index} className="group/file-item relative h-[68px] w-[144px] rounded-lg border-[0.5px] border-components-panel-border bg-components-card-bg p-2 shadow-xs hover:bg-components-card-bg-alt">
-                        <button
-                          type="button"
-                          onClick={() => removeFile(index)}
-                          className="btn disabled:btn-disabled btn-secondary btn-medium absolute -right-1.5 -top-1.5 z-[11] hidden h-5 w-5 rounded-full p-0 group-hover/file-item:flex"
-                        >
-                          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" className="remixicon h-4 w-4 text-components-button-secondary-text">
-                            <path d="M11.9997 10.5865L16.9495 5.63672L18.3637 7.05093L13.4139 12.0007L18.3637 16.9504L16.9495 18.3646L11.9997 13.4149L7.04996 18.3646L5.63574 16.9504L10.5855 12.0007L5.63574 7.05093L7.04996 5.63672L11.9997 10.5865Z"></path>
+                      <a
+                        key={index}
+                        href={file.previewUrl}
+                        target="_blank"
+                        download={file.name}
+                        rel="noopener noreferrer"
+                        className="input-file-preview"
+                      >
+                        {/* 左側：PDFアイコン */}
+                        <div className="file-icon-wrapper">
+                          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" className="remixicon w-6 h-6 text-red-400">
+                            <path d="M3.9985 2C3.44749 2 3 2.44405 3 2.9918V21.0082C3 21.5447 3.44476 22 3.9934 22H20.0066C20.5551 22 21 21.5489 21 20.9925L20.9997 7L16 2H3.9985ZM10.5 7.5H12.5C12.5 9.98994 14.6436 12.6604 17.3162 13.5513L16.8586 15.49C13.7234 15.0421 10.4821 16.3804 7.5547 18.3321L6.3753 16.7191C7.46149 15.8502 8.50293 14.3757 9.27499 12.6534C10.0443 10.9373 10.5 9.07749 10.5 7.5ZM11.1 13.4716C11.3673 12.8752 11.6043 12.2563 11.8037 11.6285C12.2754 12.3531 12.8553 13.0182 13.5102 13.5953C12.5284 13.7711 11.5666 14.0596 10.6353 14.4276C10.8 14.1143 10.9551 13.7948 11.1 13.4716Z"></path>
                           </svg>
-                        </button>
-                        <div className="system-xs-medium mb-1 line-clamp-2 h-8 cursor-pointer break-all text-text-tertiary" title={file.name}>
-                          {file.name}
                         </div>
-                        <div className="relative flex items-center justify-between">
-                          <div className="system-2xs-medium-uppercase flex items-center text-text-tertiary">
-                            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" className="remixicon shrink-0 size-4 mr-1" style={{ color: iconColor }}>
-                              <path d="M3.9985 2C3.44749 2 3 2.44405 3 2.9918V21.0082C3 21.5447 3.44476 22 3.9934 22H20.0066C20.5551 22 21 21.5489 21 20.9925L20.9997 7L16 2H3.9985ZM10.5 7.5H12.5C12.5 9.98994 14.6436 12.6604 17.3162 13.5513L16.8586 15.49C13.7234 15.0421 10.4821 16.3804 7.5547 18.3321L6.3753 16.7191C7.46149 15.8502 8.50293 14.3757 9.27499 12.6534C10.0443 10.9373 10.5 9.07749 10.5 7.5ZM11.1 13.4716C11.3673 12.8752 11.6043 12.2563 11.8037 11.6285C12.2754 12.3531 12.8553 13.0182 13.5102 13.5953C12.5284 13.7711 11.5666 14.0596 10.6353 14.4276C10.8 14.1143 10.9551 13.7948 11.1 13.4716Z"></path>
-                            </svg>
-                            {ext}
-                            <div className="mx-1">·</div>
+
+                        {/* 右側：名前とサイズの縦並び */}
+                        <div className="input-file-info">
+                          <span className="input-file-name" title={file.name}>
+                            {file.name}
+                          </span>
+                          <span className="input-file-size">
                             {file.size ? formatSize(file.size) : ''}
-                          </div>
+                          </span>
                         </div>
+
+                        <button
+                          onClick={(e) => { e.preventDefault(); removeFile(index); }}
+                          className="absolute -top-2 -right-2 bg-gray-500 rounded-full w-5 h-5 text-white text-xs flex items-center justify-center"
+                          aria-label="削除"
+                        >
+                          ×
+                        </button>
                         {file.uploading && (
                           <div className="absolute inset-0 bg-black/30 flex items-center justify-center text-white text-xs rounded-lg">アップロード中...</div>
                         )}
-                      </div>
+                      </a>
                     );
                   }
                 })}
