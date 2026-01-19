@@ -149,9 +149,9 @@ export default function ChatPage() {
       setConversationId(newSession.difyId);
       if (typeof window !== 'undefined') localStorage.setItem('last_conversation_id', newSession.difyId);
     };
-    window.addEventListener('new-chat-created' as any, handleNewChat as any);
+    window.addEventListener('new-chat-created', handleNewChat as EventListener);
     return () => {
-      window.removeEventListener('new-chat-created' as any, handleNewChat as any);
+      window.removeEventListener('new-chat-created', handleNewChat as EventListener);
     };
   }, [session, status, router, fetchHistory]); // 初期化処理とイベントリスナーをまとめて管理
 
