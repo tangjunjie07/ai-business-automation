@@ -8,7 +8,7 @@ export const runtime = {
 }
 
 export const database = {
-  url: get('DATABASE_URL', ''),
+  url: get('DATABASE_URL', 'postgresql://user:pass@localhost:5432/db'),
   migrationsEnabled: get('MIGRATIONS_ENABLED', 'true') === 'true',
 }
 
@@ -21,7 +21,7 @@ export const storage = {
 }
 
 export const auth = {
-  nextAuthUrl: get('NEXTAUTH_URL', ''),
+  nextAuthUrl: get('NEXTAUTH_URL', 'http://localhost:3000'),
   secret: get('NEXTAUTH_SECRET', ''),
   cookieSecure: runtime.env === 'production',
 }
