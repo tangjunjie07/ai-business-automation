@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { Pool } from 'pg'
-import config, { getDifyKey } from '@/config'
+import config, { getDifyKey, dify } from '@/config'
 
 // グローバルPrismaインスタンス（コネクション使い回し）
 const globalForPrisma = globalThis as unknown as {

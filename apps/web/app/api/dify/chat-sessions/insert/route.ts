@@ -41,14 +41,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'tenant mismatch' }, { status: 403 });
     }
 
-    // 既存チェック
-    const exists = await prisma.chatSession.findFirst({ where: { difyId: conversation_id, userId } });
-    if (exists) {
-      return NextResponse.json({ error: 'already exists' }, { status: 409 });
-    }
-
-    const session = await prisma.chatSession.create({
-      data: {
+    // 既存チェックを削除し、upsertを使用
+    const session = await prisma.chatSession.upsert({
+      where: {
+        difyId_userId: {
+          difyId: conversation_id,
+          userId,
+        },
+      },
+      update: {
+        title,
+      },
+      create: {
         difyId: conversation_id,
         userId,
         title,

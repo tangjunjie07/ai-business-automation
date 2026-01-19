@@ -43,7 +43,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     
     await prisma.chatSession.update({ where: { id: session.id }, data: { title: title.trim() } })
     return NextResponse.json({ success: true })
-  } catch (error) {
+  } catch (_) {
     return NextResponse.json({ error: 'サーバーエラー' }, { status: 500 })
   }
 }

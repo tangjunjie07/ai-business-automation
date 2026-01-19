@@ -19,7 +19,9 @@ export function RenameModal({
   const [tempName, setTempName] = useState(name);
 
   useEffect(() => {
-    setTempName(name);
+    if (isShow) {
+      setTempName(name); // eslint-disable-line react-hooks/set-state-in-effect
+    }
   }, [name, isShow]);
 
   return (

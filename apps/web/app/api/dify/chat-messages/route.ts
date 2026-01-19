@@ -1,26 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-import { PrismaPg } from '@prisma/adapter-pg'
-import { Pool } from 'pg'
 import config, { getDifyKey, dify } from '@/config'
-
-// グローバルPrismaインスタンス（コネクション使い回し）
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
-  adapter: PrismaPg | undefined
-  pool: import('pg').Pool | undefined
-}
-
-function getPrisma() {
-  if (!globalForPrisma.prisma) {
-    const connectionString = config.database.url
-    if (!connectionString) throw new Error('DATABASE_URLが未設定です')
-    globalForPrisma.pool = new Pool({ connectionString })
-    globalForPrisma.adapter = new PrismaPg(globalForPrisma.pool)
-    globalForPrisma.prisma = new PrismaClient({ adapter: globalForPrisma.adapter })
-  }
-  return globalForPrisma.prisma
-}
 
 export async function POST(req: NextRequest) {
   // 日本語コメント: Dify API仕様に準拠し、初回チャット時はchat_sessionsへ保存
@@ -28,7 +7,7 @@ export async function POST(req: NextRequest) {
   const { query, inputs, user, conversation_id, files } = body
 
   // Dify APIリクエストbodyを仕様通り組み立て
-  const difyBody: any = {
+  const difyBody: DifyChatRequest = {
     query: query || '',
     inputs: inputs || {},
     user: user || '',

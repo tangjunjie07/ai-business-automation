@@ -2,52 +2,39 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Paperclip, Send, X } from 'lucide-react';
+import { Paperclip, Send, Square, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import Image from 'next/image';
+import { UploadedFile } from '@/types/dify';
 
 export function ChatInput({
   value,
   onChange,
   onSend,
   isLoading,
-  onStop,
   onUpload,
   addFileId,
   removeFileId,
   clearFiles,
-  onFilesChange
+  onFilesChange,
+  onAbort
 }: {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
   isLoading: boolean;
-  onStop: () => void;
   onUpload?: (files: FileList | null) => void;
   addFileId: (id: string) => void;
   removeFileId: (id: string) => void;
   clearFiles: () => void;
-  onFilesChange: (files: any[]) => void;
+  onFilesChange: (files: UploadedFile[]) => void;
+  onAbort?: () => void;
 }) {
   const { data: session } = useSession();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  type UploadedFile = {
-    id?: string;
-    name: string;
-    previewUrl?: string;
-    uploading?: boolean;
-    original?: File;
-    size?: number;
-    type?: string;
-  };
 
   const [files, setFiles] = useState<UploadedFile[]>([]);
-
-
-  useEffect(() => {
-    // autosize on value or files change (in case parent clears it or previews change)
-    autosize();
-  }, [value]);
 
   const autosize = () => {
     const ta = textareaRef.current;
@@ -57,6 +44,11 @@ export function ChatInput({
     const h = Math.min(ta.scrollHeight, 160); // max-height ~160px
     ta.style.height = `${h}px`;
   };
+
+  useEffect(() => {
+    // autosize on value or files change (in case parent clears it or previews change)
+    autosize();
+  }, [value]);
 
   // Recompute autosize when files change (previews affect layout)
   useEffect(() => {
@@ -102,7 +94,7 @@ export function ChatInput({
     onUpload?.(e.target.files);
 
     // upload each file and update preview when done
-    incoming.forEach(async (f, idx) => {
+    incoming.forEach(async (f) => {
       try {
         const uploaded = await uploadFileToServer(f);
         setFiles(prev => {
@@ -119,7 +111,7 @@ export function ChatInput({
         // after upload, update parent with new FileList (optional)
         const currentFiles = fileListFromArray(files.map(x => x.original!).filter(Boolean));
         onUpload?.(currentFiles);
-      } catch (err) {
+      } catch (_) {
         // mark as not uploading and keep name, you may surface error
         setFiles(prev => prev.map(p => (p.original === f ? { ...p, uploading: false } : p)));
       }
@@ -134,7 +126,7 @@ export function ChatInput({
       const dt = new DataTransfer();
       arr.forEach(f => dt.items.add(f));
       return dt.files;
-    } catch (e) {
+    } catch (_) {
       return null;
     }
   };
@@ -147,7 +139,7 @@ export function ChatInput({
       removeFileId(target.id);
     }
 
-    const next = files.filter((_, i) => i !== index);
+    const next = files.filter((f, i) => i !== index);
     setFiles(next);
     setTimeout(() => onFilesChange(next), 0);
     const originals = next.map(f => f.original).filter(Boolean) as File[];
@@ -169,7 +161,7 @@ export function ChatInput({
   };
 
   // Enterキーで送信しない（送信はボタンのみ）
-  const onKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+  const onKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = () => {
     // 何もしない（Shift+EnterもEnterも改行のみ）
   };
 
@@ -189,9 +181,11 @@ export function ChatInput({
                     return (
                       <div key={index} className="relative flex-shrink-0 w-16 h-16 bg-chat-bubble-bg/80 rounded-md border-0 flex items-center justify-center overflow-hidden p-0">
                         {file.previewUrl ? (
-                          <img
+                          <Image
                             src={file.previewUrl}
                             alt={file.name}
+                            width={64}
+                            height={64}
                             className="object-cover w-full h-full"
                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           />
@@ -289,18 +283,15 @@ export function ChatInput({
               </label>
               <button
                 type="button"
-                onClick={handleSend}
-                disabled={!canSend}
-                aria-label="送信"
-                className={`${canSend ? 'ml-2 text-white' : 'ml-2 text-text-tertiary cursor-not-allowed'} w-10 h-10 flex items-center justify-center rounded-md`}
-                style={canSend ? { backgroundColor: 'rgb(28,100,242)' } : undefined}
+                onClick={isLoading ? onAbort : handleSend}
+                disabled={!canSend && !isLoading}
+                aria-label={isLoading ? "停止" : "送信"}
+                className={`${(canSend || isLoading) ? 'ml-2 text-white' : 'ml-2 text-text-tertiary cursor-not-allowed'} w-10 h-10 flex items-center justify-center rounded-md`}
+                style={(canSend || isLoading) ? { backgroundColor: isLoading ? 'rgb(239,68,68)' : 'rgb(28,100,242)' } : undefined}
               >
-                <Send size={18} />
+                {isLoading ? <Square size={18} /> : <Send size={18} />}
               </button>
             </div>
-            {isLoading && (
-              <button type="button" className="ml-2 text-sm text-gray-500" onClick={onStop}>停止</button>
-            )}
           </div>
 
         </div>

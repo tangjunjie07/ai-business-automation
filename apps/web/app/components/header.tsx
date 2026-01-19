@@ -9,12 +9,19 @@ import { ROUTES, ROLES, isNormalUser } from '@/config'
 
 type RoleValue = (typeof ROLES)[keyof typeof ROLES]
 
+type NavItem = {
+  href: string
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  roles?: RoleValue[]
+}
+
 function Header() {
   const pathname = usePathname() || '/'
   const [open, setOpen] = useState(false)
   const { data: session, status } = useSession()
 
-  const nav: { href: string; label: string; icon: any; roles?: Array<(typeof ROLES)[keyof typeof ROLES]> }[] = [
+  const nav: NavItem[] = [
     { href: ROUTES.DASHBOARD, label: 'ダッシュボード', icon: Grid, roles: [ROLES.ADMIN] },
     { href: ROUTES.CHAT, label: 'チャット', icon: MessageSquare, roles: [ROLES.ADMIN, ROLES.USER] },
   ]

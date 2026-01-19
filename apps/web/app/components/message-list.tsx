@@ -5,14 +5,17 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import toast from 'react-hot-toast';
 import config from '@/config';
+import { Session } from '@/types/next-auth';
+import Image from 'next/image';
+import { UploadedFile } from '@/types/dify';
 
 export interface Message {
   role: 'user' | 'assistant';
   content: string;
-  message_files?: any[];
+  message_files?: UploadedFile[];
 }
 
-export function MessageList({ messages, session }: { messages: Message[]; session?: any }) {
+export function MessageList({ messages, session, currentTask, isLoading }: { messages: Message[]; session?: Session; currentTask?: string; isLoading?: boolean }) {
   const userInitials = (() => {
     const name = session?.user?.name || session?.user?.email || '';
     const parts = name.split(' ');
@@ -44,7 +47,7 @@ export function MessageList({ messages, session }: { messages: Message[]; sessio
                             if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
                             return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
                           };
-                          const handleDownload = async (file: any) => {
+                          const handleDownload = async (file: UploadedFile) => {
                             try {
                               const response = await fetch(file.url);
                               if (!response.ok) {
@@ -60,7 +63,7 @@ export function MessageList({ messages, session }: { messages: Message[]; sessio
                               link.click();
                               document.body.removeChild(link);
                               URL.revokeObjectURL(url);
-                            } catch (error) {
+                            } catch (_) {
                               console.error("ダウンロードに失敗しました。URLの期限が切れている可能性があります。");
                               toast.error("ダウンロードに失敗しました。URLの期限が切れている可能性があります。");
                             }
@@ -69,10 +72,12 @@ export function MessageList({ messages, session }: { messages: Message[]; sessio
                             return (
                               <div key={fileIdx} className="group/file-image relative cursor-pointer">
                                 <div className="border-[2px] border-gray-300 h-[68px] w-[68px] shadow-md">
-                                  <img
+                                  <Image
                                     className="h-full w-full object-cover cursor-pointer"
                                     alt="Preview"
                                     src={file.url}
+                                    width={68}
+                                    height={68}
                                   />
                                 </div>
                                 <button
@@ -127,9 +132,10 @@ export function MessageList({ messages, session }: { messages: Message[]; sessio
                       remarkPlugins={[remarkGfm]}
                       className="prose prose-sm max-w-none text-slate-800 leading-relaxed"
                       components={{
-                        code({ inline, className, children, ...props }) {
+                        code({ node, className, children, ...props }) {
                           const match = /language-(\w+)/.exec(className || '');
-                          return !inline && match ? (
+                          const isInline = node?.tagName === 'code' && !match;
+                          return !isInline && match ? (
                             <SyntaxHighlighter style={oneLight} language={match[1]} PreTag="div" {...props}>
                               {String(children).replace(/\n$/, '')}
                             </SyntaxHighlighter>
@@ -164,7 +170,7 @@ export function MessageList({ messages, session }: { messages: Message[]; sessio
                             if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
                             return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
                           };
-                          const handleDownload = async (file: any) => {
+                          const handleDownload = async (file: UploadedFile) => {
                             try {
                               const response = await fetch(file.url);
                               if (!response.ok) {
@@ -180,7 +186,7 @@ export function MessageList({ messages, session }: { messages: Message[]; sessio
                               link.click();
                               document.body.removeChild(link);
                               URL.revokeObjectURL(url);
-                            } catch (error) {
+                            } catch (_) {
                               console.error("ダウンロードに失敗しました。URLの期限が切れている可能性があります。");
                               toast.error("ダウンロードに失敗しました。URLの期限が切れている可能性があります。");
                             }
@@ -189,10 +195,12 @@ export function MessageList({ messages, session }: { messages: Message[]; sessio
                             return (
                               <div key={fileIdx} className="group/file-image relative cursor-pointer">
                                 <div className="border-[2px] border-white/20 h-[68px] w-[68px] shadow-md">
-                                  <img
+                                  <Image
                                     className="h-full w-full object-cover cursor-pointer"
                                     alt="Preview"
                                     src={file.url}
+                                    width={68}
+                                    height={68}
                                   />
                                 </div>
                                 <div className="absolute inset-0.5 z-10 hidden bg-black bg-opacity-[0.3] group-hover/file-image:block">
@@ -251,9 +259,10 @@ export function MessageList({ messages, session }: { messages: Message[]; sessio
                         remarkPlugins={[remarkGfm]}
                         className="prose prose-sm max-w-none text-white leading-relaxed"
                         components={{
-                          code({ inline, className, children, ...props }) {
+                          code({ node, className, children, ...props }) {
                             const match = /language-(\w+)/.exec(className || '');
-                            return !inline && match ? (
+                            const isInline = node?.tagName === 'code' && !match;
+                            return !isInline && match ? (
                               <SyntaxHighlighter style={oneLight} language={match[1]} PreTag="div" {...props}>
                                 {String(children).replace(/\n$/, '')}
                               </SyntaxHighlighter>
@@ -280,6 +289,12 @@ export function MessageList({ messages, session }: { messages: Message[]; sessio
           );
         }
       })}
+      {isLoading && currentTask && (
+        <div className="mt-2 text-sm text-gray-500 flex items-center gap-2">
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500"></div>
+          {currentTask}
+        </div>
+      )}
     </div>
   );
 }

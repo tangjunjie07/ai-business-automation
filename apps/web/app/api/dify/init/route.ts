@@ -32,22 +32,24 @@ export async function GET(req: Request) {
       return new Response(JSON.stringify({ error: 'dify_error', detail: text }), { status: 502, headers: { 'Content-Type': 'application/json' } })
     }
 
-    const convsJson = await convsRes.json().catch(()=>({ items: [] })) as any
-    const items: any[] = convsJson.items || convsJson.conversations || []
+    const convsJson = await convsRes.json().catch(()=>({ items: [] })) as unknown
+    const items: unknown[] = (convsJson as { items?: unknown[]; conversations?: unknown[] }).items || (convsJson as { items?: unknown[]; conversations?: unknown[] }).conversations || []
     if (!items.length) {
       // no existing conversations — return an empty assistant welcome (client may show default)
       return new Response(JSON.stringify({ messages: [{ role: 'assistant', content: '' }] }), { headers: { 'Content-Type': 'application/json' } })
     }
 
     // Pick the most recent conversation (assume first or sort by updatedAt)
-    let conv = items[0]
+    let conv = items[0] as { id?: string; conversation_id?: string; conversationId?: string; updated_at?: string; updatedAt?: string }
     if (items.length > 1) {
       items.sort((a,b)=>{
-        const ta = new Date(a.updated_at || a.updatedAt || 0).getTime()
-        const tb = new Date(b.updated_at || b.updatedAt || 0).getTime()
+        const aConv = a as { updated_at?: string; updatedAt?: string }
+        const bConv = b as { updated_at?: string; updatedAt?: string }
+        const ta = new Date(aConv.updated_at || aConv.updatedAt || 0).getTime()
+        const tb = new Date(bConv.updated_at || bConv.updatedAt || 0).getTime()
         return tb - ta
       })
-      conv = items[0]
+      conv = items[0] as { id?: string; conversation_id?: string; conversationId?: string; updated_at?: string; updatedAt?: string }
     }
 
     const convId = conv.id || conv.conversation_id || conv.conversationId
@@ -75,13 +77,14 @@ export async function GET(req: Request) {
       return new Response(JSON.stringify({ error: 'dify_error', detail: text }), { status: 502, headers: { 'Content-Type': 'application/json' } })
     }
 
-    const msgsJson = await msgsRes.json().catch(()=>({ messages: [] })) as any
-    const messagesRaw: any[] = msgsJson.items || msgsJson.messages || []
+    const msgsJson = await msgsRes.json().catch(()=>({ messages: [] })) as unknown
+    const messagesRaw: unknown[] = (msgsJson as { items?: unknown[]; messages?: unknown[] }).items || (msgsJson as { items?: unknown[]; messages?: unknown[] }).messages || []
 
     // Map upstream messages to { role, content }
     const mapped = messagesRaw.map(m => {
-      const role = m.role || m.author?.role || (m.from === 'assistant' ? 'assistant' : 'user')
-      const content = m.content || m.text || m.body || (m.outputs && m.outputs.text) || ''
+      const msg = m as { role?: string; author?: { role?: string }; from?: string; content?: string; text?: string; body?: string; outputs?: { text?: string } }
+      const role = msg.role || msg.author?.role || (msg.from === 'assistant' ? 'assistant' : 'user')
+      const content = msg.content || msg.text || msg.body || (msg.outputs && msg.outputs.text) || ''
       return { role, content }
     }).filter(m=>m.content)
 

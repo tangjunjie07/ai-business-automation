@@ -9,7 +9,7 @@ import config from '@/config'
 
 
 // sessions: {difyId, title, isPinned, updatedAt}[]
-export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onNewChat, onRename, messages = [], tenantId, userId, currentSessionId }: { sessions?: any[]; onSelect?: (id: string) => void; onClose?: () => void; onPin?: (id: string) => void; onDelete?: (id: string) => void; onNewChat?: () => void; onRename?: (id: string, name: string) => void; messages?: any[]; tenantId?: string; userId?: string; currentSessionId?: string }) {
+export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onNewChat, onRename, messages = [], tenantId, userId, currentSessionId }: { sessions?: { difyId: string; title: string; isPinned: boolean; updatedAt: number }[]; onSelect?: (id: string) => void; onClose?: () => void; onPin?: (id: string) => void; onDelete?: (id: string) => void; onNewChat?: () => void; onRename?: (id: string, name: string) => void; messages?: unknown[]; tenantId?: string; userId?: string; currentSessionId?: string }) {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [renameModal, setRenameModal] = useState<{ show: boolean; id: string | null; name: string }>({ show: false, id: null, name: '' });
   const [renameLoading, setRenameLoading] = useState(false);

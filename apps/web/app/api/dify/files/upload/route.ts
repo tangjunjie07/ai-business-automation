@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     const forward = new FormData();
 
     // Debug: summarize incoming form entries (do not log binary contents)
-    const summary: any[] = [];
+    const summary: { key: string; type: string; name?: string; size?: number; mime?: string; value?: string }[] = [];
     for (const [key, val] of form.entries()) {
       if (val instanceof File) {
         summary.push({ key, type: 'file', name: val.name, size: val.size, mime: val.type });
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     const headers = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
 
     const url = `${apiBase.replace(/\/$/, '')}/files/upload`;
-    const resp = await fetch(url, { method: 'POST', headers, body: forward as any });
+    const resp = await fetch(url, { method: 'POST', headers, body: forward });
     if (!resp.ok) {
       const text = await resp.text();
       console.error('Dify upload failed', url, resp.status, text);
@@ -42,7 +42,8 @@ export async function POST(req: Request) {
     // 上流が preview_url や source_url を返す場合はそれを優先し、なければ組み立てる
     const previewUrl = data?.preview_url || data?.source_url || data?.previewUrl || (apiBase ? apiBase.replace(/\/$/, '') + '/files/' + data.id + '/preview' : undefined);
     return NextResponse.json({ ...data, previewUrl }, { status: 200 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || String(err) }, { status: 500 });
+  } catch (err: unknown) {
+    const error = err as Error;
+    return NextResponse.json({ error: error?.message || String(err) }, { status: 500 });
   }
 }

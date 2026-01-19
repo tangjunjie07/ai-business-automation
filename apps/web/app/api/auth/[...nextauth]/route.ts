@@ -6,6 +6,7 @@ import { Pool } from 'pg'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
 import appConfig, { ROUTES, ROLES } from '@/config'
+import { User, Session } from '@/types/next-auth'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
@@ -118,7 +119,7 @@ export const authOptions = {
     updateAge: Number(process.env.SESSION_UPDATE_AGE || String(60 * 60)),
   },
   callbacks: {
-    async jwt({ token, user }: { token: JWT; user?: any }) {
+    async jwt({ token, user }: { token: JWT; user?: User }) {
       if (user) {
         token.role = user.role
         token.tenantId = user.tenantId
@@ -127,7 +128,7 @@ export const authOptions = {
       }
       return token
     },
-    async session({ session, token }: { session: any; token: JWT }) {
+    async session({ session, token }: { session: Session; token: JWT }) {
       if (token && session.user) {
         session.user.id = token.sub!
         session.user.role = token.role as string

@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   let data;
   try {
     data = text ? JSON.parse(text) : { data: [], limit: 20, has_more: false };
-  } catch (e) {
+  } catch (_) {
     return NextResponse.json({ error: 'Dify APIレスポンス不正', detail: text }, { status: 502 });
   }
   return NextResponse.json(data, { status: difyRes.status });

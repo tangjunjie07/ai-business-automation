@@ -1,9 +1,10 @@
 import { useState, useRef } from 'react';
+import { UploadedFile } from '@/types/dify';
 
 export interface Message {
   role: 'user' | 'assistant';
   content: string;
-  message_files?: any[];
+  message_files?: UploadedFile[];
 }
 
 
@@ -13,6 +14,10 @@ export const useChatStream = () => {
   // 添付ファイルIDリスト管理
   const [fileIds, setFileIds] = useState<string[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const [currentTask, setCurrentTask] = useState<string>('準備中...');
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const [currentTenantId, setCurrentTenantId] = useState<string>('');
+  const [currentUserId, setCurrentUserId] = useState<string>('');
 
   // onConversationId: conversation_id確定時, onFirstAiMessage: AI初回返答時
   const sendMessage = async (
@@ -22,9 +27,11 @@ export const useChatStream = () => {
     userId?: string,
     onConversationId?: (id: string) => void,
     onFirstAiMessage?: (title?: string, conversationId?: string) => void,
-    files?: any[]
+    files?: UploadedFile[]
   ) => {
     setIsLoading(true);
+    setCurrentTenantId(tenantId);
+    setCurrentUserId(userId || '');
     abortControllerRef.current = new AbortController();
     setMessages(prev => [...prev, { role: 'user', content: query, message_files: files?.filter(f => f.id).map(f => ({ id: f.id, type: f.type, url: f.previewUrl, belongs_to: 'user', name: f.name, size: f.size })) }]);
     let conversationIdSet = false;
@@ -56,6 +63,11 @@ export const useChatStream = () => {
       let assistantMessage = "";
       setMessages(prev => [...prev, { role: 'assistant', content: "" }]);
       while (true) {
+        // 中止チェック
+        if (abortControllerRef.current?.signal.aborted) {
+          console.log('Stream aborted by user');
+          break;
+        }
         const { value, done } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value);
@@ -64,11 +76,24 @@ export const useChatStream = () => {
           if (!line.trim() || !line.startsWith('data:')) continue;
           try {
             const data = JSON.parse(line.substring(5));
+            // task_id 保存
+            if (data.task_id && !currentTaskId) {
+              setCurrentTaskId(data.task_id);
+            }
             // conversation_idがストリームで来たらコールバック
             if (!conversationIdSet && data.conversation_id) {
               conversationIdSet = true;
               latestConversationId = data.conversation_id;
               if (onConversationId) onConversationId(data.conversation_id);
+            }
+            if (data.event === 'node_started') {
+              // ノード開始時にタスク名を更新
+              const nodeTitle = data.data?.title || '処理中...';
+              setCurrentTask(`${nodeTitle} を実行中...`);
+            }
+            if (data.event === 'node_finished') {
+              // ノード完了時に次のタスクへ
+              setCurrentTask('次の処理へ...');
             }
             if (data.event === 'message') {
               assistantMessage += data.answer;
@@ -80,6 +105,7 @@ export const useChatStream = () => {
             }
             // ストリーム終了時のみタイトル取得コールバック
             if (data.event === 'message_end') {
+              setCurrentTask('完了');
               // タイトル候補: ユーザー発言＋AI返答の先頭24文字
               let title = "";
               try {
@@ -132,24 +158,38 @@ export const useChatStream = () => {
     }
   };
 
-  // ピン留めAPI連携
-  const pinSession = async (sessionId: string, tenantId: string) => {
-    await fetch(`/api/dify/chat-sessions/${sessionId}/pin`, {
-      method: 'POST',
-      headers: { 'x-tenant-id': tenantId }
+  const stopGeneration = async () => {
+    if (currentTaskId) {
+      try {
+        await fetch(`/api/dify/chat-messages/${currentTaskId}/stop`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tenant-id': currentTenantId
+          },
+          body: JSON.stringify({
+            user: currentUserId
+          })
+        });
+      } catch (e) {
+        console.error('Stop API failed:', e);
+      }
+    }
+    try {
+      abortControllerRef.current?.abort();
+    } catch (e) {
+      // AbortController の abort はエラーを投げないが、ストリーム中断でコンソール警告が出る場合がある
+      console.warn('AbortController abort warning:', e);
+    }
+    // 中止された場合、部分的に生成されたAIメッセージを削除
+    setMessages(prev => {
+      const lastMessage = prev[prev.length - 1];
+      if (lastMessage && lastMessage.role === 'assistant' && lastMessage.content.trim() === '') {
+        // 空のassistantメッセージは削除
+        return prev.slice(0, -1);
+      }
+      return prev;
     });
-  };
-
-  // 削除API連携
-  const deleteSession = async (sessionId: string, tenantId: string) => {
-    await fetch(`/api/dify/chat-sessions/${sessionId}/delete`, {
-      method: 'DELETE',
-      headers: { 'x-tenant-id': tenantId }
-    });
-  };
-
-  const stopGeneration = () => {
-    abortControllerRef.current?.abort();
     setIsLoading(false);
   };
 
@@ -158,6 +198,8 @@ export const useChatStream = () => {
     setMessages([]);
     setFileIds([]);
     setIsLoading(false);
+    setCurrentTask('準備中...');
+    setCurrentTaskId(null);
   };
 
   return {
@@ -170,8 +212,7 @@ export const useChatStream = () => {
     removeFileId,
     clearFiles,
     fetchHistory,
-    pinSession,
-    deleteSession,
     resetAll,
+    currentTask,
   };
 };

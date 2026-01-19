@@ -19,7 +19,7 @@ export default function useDifySSE() {
   const append = (m: Message) => setMessages((s) => [...s, m])
 
   async function send(
-    payload: Record<string, any> | FormData,
+    payload: Record<string, unknown> | FormData,
     opts?: { tenantId?: string; userId?: string; onChunk?: (chunk: string) => void }
   ) {
     if (isStreaming) abort()
@@ -101,7 +101,8 @@ export default function useDifySSE() {
 
       return acc
     } catch (e) {
-      if ((e as any)?.name === 'AbortError') {
+      const error = e as Error;
+      if (error?.name === 'AbortError') {
         // preserve partials - append a marker
         setMessages((prev) => {
           const last = prev[prev.length - 1]

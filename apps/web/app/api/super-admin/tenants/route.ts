@@ -54,6 +54,11 @@ export async function POST(req: NextRequest) {
   if (exists) {
     return NextResponse.json({ error: 'テナントコード重複' }, { status: 409 })
   }
+  // 管理者ユーザー重複チェック
+  const userExists = await getPrisma().user.findUnique({ where: { email: adminEmail } })
+  if (userExists) {
+    return NextResponse.json({ error: '管理者メールアドレス重複' }, { status: 409 })
+  }
   // パスワードハッシュ
   const hashed = await bcrypt.hash(adminPassword, 10)
   // テナント作成

@@ -1,46 +1,57 @@
 "use client"
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import config, { ROUTES } from '@/config'
 import { Sidebar } from '@/components/sidebar'
 import { ConfigPanel } from '@/components/config-panel'
 import { MessageList } from '@/components/message-list'
 import { ChatInput } from '@/components/chat-input'
 import { useChatStream } from '@/hooks/useChatStream'
+import { DifyConversation } from '@/types/dify'
 
 // バックエンドAPI呼び出し時は必ず x-tenant-id ヘッダーを付与（RLS・テナント分離のため必須）
 
 // 履歴型
 type ChatSession = { difyId: string; title: string; isPinned: boolean; updatedAt: string };
 
+type UploadedFile = {
+  id?: string;
+  name: string;
+  previewUrl?: string;
+  uploading?: boolean;
+  original?: File;
+  size?: number;
+  type?: string;
+};
+
 export default function ChatPage() {
   const { data: session, status } = useSession();
-  const { messages, sendMessage, isLoading, stopGeneration, fetchHistory, pinSession, deleteSession, resetAll, addFileId, removeFileId, clearFiles } = useChatStream();
+  const { messages, sendMessage, isLoading, fetchHistory, resetAll, addFileId, removeFileId, clearFiles, currentTask, stopGeneration } = useChatStream();
   const [input, setInput] = useState('');
   const [isLeftOpen, setIsLeftOpen] = useState(false);
   const [isRightOpen, setIsRightOpen] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [headerTitle, setHeaderTitle] = useState<string>('経理担当AI');
-  const [tenantId, setTenantId] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [files, setFiles] = useState<any[]>([]);
+  const [files, setFiles] = useState<UploadedFile[]>([]);
 
   const router = useRouter();
+  const tenantId = session?.user?.tenantId || null;
+  const userId = session?.user?.id || null;
   const didInit = useRef(false);
+
   useEffect(() => {
     if (status !== 'authenticated') return;
-    if (didInit.current) return;
-    didInit.current = true;
-    const tid = session?.user?.tenantId;
-    const uid = session?.user?.id;
-    setTenantId(tid || null);
-    setUserId(uid || null);
-    if (!tid) {
+    if (!tenantId) {
       router.push(ROUTES.SIGNIN);
       return;
     }
+    if (didInit.current) return;
+    didInit.current = true;
+
+    const tid = tenantId;
+    const uid = userId;
 
     // --- Dify/DB会話同期処理 ---
     const syncConversations = async () => {
@@ -51,13 +62,13 @@ export default function ChatPage() {
         });
         const difyData = await difyRes.json();
         const difyConversations = Array.isArray(difyData.data) ? difyData.data : [];
-        const difyIds = difyConversations.map((c: any) => c.id);
+        const difyIds = difyConversations.map((c: DifyConversation) => c.id);
         // DBから全会話取得
         const dbRes = await fetch('/api/dify/db/conversations', {
           headers: { 'x-user-id': uid || '', 'x-tenant-id': tid || '' }
         });
         const dbData = await dbRes.json();
-        const dbIds = Array.isArray(dbData.data) ? dbData.data.map((c: any) => c.id) : [];
+        const dbIds = Array.isArray(dbData.data) ? dbData.data.map((c: DifyConversation) => c.id) : [];
         // DBに存在しDifyにないIDを抽出（削除）
         const toDelete = dbIds.filter((id: string) => !difyIds.includes(id));
         if (toDelete.length > 0) {
@@ -71,7 +82,7 @@ export default function ChatPage() {
         const toInsert = difyIds.filter((id: string) => !dbIds.includes(id));
         if (toInsert.length > 0) {
           const conversationsToInsert = toInsert.map(id => {
-            const conv = difyConversations.find((c: any) => c.id === id);
+            const conv = difyConversations.find((c: { id: string; name: string }) => c.id === id);
             return conv ? { conversation_id: id, title: conv.name } : null;
           }).filter(Boolean) as Array<{conversation_id: string, title: string}>;
           if (conversationsToInsert.length > 0) {
@@ -130,8 +141,9 @@ export default function ChatPage() {
             localStorage.setItem('last_conversation_id', '')
         }
       });
+
     // 新規チャット作成イベントリスナー
-    const handleNewChat = (e: any) => {
+    const handleNewChat = (e: CustomEvent) => {
       const newSession = e.detail;
       setSessions(prev => [newSession, ...prev]);
       setConversationId(newSession.difyId);
@@ -141,13 +153,12 @@ export default function ChatPage() {
     return () => {
       window.removeEventListener('new-chat-created', handleNewChat);
     };
-  }, [session, status]);
+  }, [session, status, router, fetchHistory]); // 初期化処理とイベントリスナーをまとめて管理
 
   // 送信時: useChatStreamのsendMessageのみを利用
   const handleSend = () => {
     if (!input.trim() || !tenantId) return;
     // 新規チャット直後の初回送信時はconversationIdをリセットして送信
-    const isNewChat = !conversationId;
     sendMessage(
       input,
       conversationId && conversationId !== 'null' ? conversationId : undefined,
@@ -340,7 +351,7 @@ export default function ChatPage() {
         <div className="flex-1 flex flex-col min-h-0 relative h-full z-10">
           <div className="flex-1 overflow-y-auto pb-60 chat-scrollbar">
             <div className="max-w-3xl mx-auto w-full p-4 md:p-8 space-y-6 min-h-[200px] flex flex-col justify-end">
-              <MessageList messages={messages} session={session} />
+              <MessageList messages={messages} session={session} currentTask={currentTask} isLoading={isLoading} />
               {messages.length === 0 && (
                 <div className="text-center text-gray-400 py-12 select-none">私は高度な専門知識を持つプロの経理担当AIです。
 提供された請求書データ（OCR原文と構造化抽出結果）に基づき、最も適切な「勘定科目」と「補助科目」を特定し、仕訳データを作成することができます。</div>
@@ -357,12 +368,12 @@ export default function ChatPage() {
                     onChange={setInput}
                     onSend={handleSend}
                     isLoading={isLoading}
-                    onStop={stopGeneration}
                     onUpload={() => {}}
                     addFileId={addFileId}
                     removeFileId={removeFileId}
                     clearFiles={clearFiles}
                     onFilesChange={setFiles}
+                    onAbort={stopGeneration}
                   />
                 </div>
               </div>

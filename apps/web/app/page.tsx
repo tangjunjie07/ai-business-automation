@@ -15,7 +15,7 @@ export default function Home() {
     if (!session) {
       router.push(ROUTES.SIGNIN)
     } else {
-      const role = (session.user as any)?.role as string | undefined
+      const role = session.user?.role
       if (role === ROLES.SUPER_ADMIN) {
         router.push(ROUTES.SUPER_ADMIN_DASHBOARD)
       } else if (role === ROLES.ADMIN) {

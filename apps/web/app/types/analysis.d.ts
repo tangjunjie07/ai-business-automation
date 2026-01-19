@@ -14,7 +14,7 @@ export interface AnalysisResult {
       confidence?: number;
       reasoning?: string;
     };
-    accountingList?: Array<any>;
+    accountingList?: Array<unknown>;
     projectId?: string;
 
     // MF CSV
@@ -31,5 +31,5 @@ export interface ProgressEvent {
   event: string;
   progress?: number; // 0-100
   message?: string;
-  result?: any;
+  result?: unknown;
 }
