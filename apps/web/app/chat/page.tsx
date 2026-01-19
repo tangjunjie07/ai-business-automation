@@ -27,7 +27,7 @@ type UploadedFile = {
 
 export default function ChatPage() {
   const { data: session, status } = useSession();
-  const { messages, sendMessage, isLoading, fetchHistory, resetAll, addFileId, removeFileId, clearFiles, currentTask, stopGeneration } = useChatStream();
+  const { messages, sendMessage, isLoading, fetchHistory, resetAll, addFileId, removeFileId, clearFiles, currentTask, stopGeneration, streamError } = useChatStream();
   const [input, setInput] = useState('');
   const [isLeftOpen, setIsLeftOpen] = useState(false);
   const [isRightOpen, setIsRightOpen] = useState(false);
