@@ -3,9 +3,9 @@ import config, { getDifyKey, dify } from '@/config'
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { task_id: string } }
+  { params }: { params: Promise<{ task_id: string }> }
 ) {
-  const { task_id } = params
+  const { task_id } = await params
 
   // リクエストボディからuserを取得
   const body = await req.json()
