@@ -140,7 +140,8 @@ export const authOptions = {
   },
   pages: {
     signIn: ROUTES.SIGNIN,
-  }
+  },
+  url: appConfig.auth.nextAuthUrl,
 }
 
 const handler = NextAuth(authOptions)
