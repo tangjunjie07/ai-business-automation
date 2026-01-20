@@ -112,8 +112,8 @@ model ChatFile {
   fileName         String?   @map("file_name") // ファイル名
   fileSize         Int?      @map("file_size") // ファイルサイズ（バイト）
   mimeType         String?   @map("mime_type") // MIMEタイプ
-  ocrResult        String?   @map("ocr_result") // OCR結果JSON文字列
-  aiResult         Json?     @map("ai_result") // AI解析結果JSON
+  // OCR結果はOcrResultテーブル参照に統一
+  // AI解析結果も専用テーブル参照に変更
   extractedAmount  Float?    @map("extracted_amount") // 抽出された金額
   extractedDate    DateTime? @map("extracted_date") // 抽出された日付
   status           String?   @default("pending") @map("status") // pending/processing/completed/failed
@@ -129,12 +129,29 @@ model ChatFile {
   // リレーション
   chatSession      ChatSession @relation(fields: [difyId], references: [difyId], onDelete: Cascade)
   ocrResults       OcrResult[]
+  aiResults        AiResult[]
   claudePredictions ClaudePrediction[]
   reconciliations  Reconciliation[]
 
   @@index([difyId])
   @@index([status])
   @@map("chat_files")
+}
+
+// ========================================
+// AI解析結果保存テーブル
+// 役割: ファイルに対するAI解析結果を保存
+// ========================================
+model AiResult {
+  id         String   @id @default(cuid())
+  chatFileId String   @map("chat_file_id")
+  result     Json     @map("result") // AI解析結果JSON
+  status     String?  @default("processing")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  chatFile   ChatFile @relation(fields: [chatFileId], references: [id])
+  @@map("ai_results")
 }
 
 // ========================================

@@ -1,4 +1,3 @@
-```instructions
 # Copilot運用ガイド（Webアプリ用）
 
 ## API実装時の注意
@@ -50,4 +49,16 @@ npx prisma studio
 ```bash
 pkill -f "prisma studio"
 ```
+
+## DBスキーマ変更時の手順
+1. `apps/web/prisma/schema.prisma` を編集し、必要なモデル・リレーションを追加/修正/削除する。
+2. 設計ドキュメント（本ファイル等）も最新化。
+3. 下記コマンドを `apps/web` ディレクトリで順に実行：
+   ```bash
+   DATABASE_URL="<接続URL>" npx prisma migrate dev --name <migration_name>
+   DATABASE_URL="<接続URL>" npx prisma generate
+   # 必要に応じて
+   DATABASE_URL="<接続URL>" npx tsx prisma/seed.ts
+   ```
+4. 本番・ステージング反映時は `DB_MIGRATION_GUIDE.md` の安全運用手順に従うこと。
 
