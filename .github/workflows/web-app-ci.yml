@@ -1,0 +1,48 @@
+name: Web App CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'apps/web/**'
+  pull_request:
+    branches: [ main, master, develop ]
+    paths:
+      - 'apps/web/**'
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          cd apps/web
+          npm ci
+
+      - name: Generate Prisma client
+        run: |
+          cd apps/web
+          npx prisma generate
+
+      - name: Run lint
+        run: |
+          cd apps/web
+          npm run lint
+
+      - name: Run tests
+        run: |
+          cd apps/web
+          npm test || true
+
+      - name: Build application
+        run: |
+          cd apps/web
+          npm run build

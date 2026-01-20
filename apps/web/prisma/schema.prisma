@@ -9,48 +9,67 @@ datasource db {
   provider = "postgresql"
 }
 
+// ========================================
+// アカウント関連テーブル
+// ========================================
+
 model Account {
   id                String  @id @default(cuid())
-  userId            String
+  userId            String  @map("user_id")
   type              String
   provider          String
-  providerAccountId String
-  refresh_token     String?
-  access_token      String?
-  expires_at        Int?
-  token_type        String?
+  providerAccountId String  @map("provider_account_id")
+  refreshToken      String? @map("refresh_token")
+  accessToken       String? @map("access_token")
+  expiresAt         Int?    @map("expires_at")
+  tokenType         String? @map("token_type")
   scope             String?
-  id_token          String?
-  session_state     String?
+  idToken           String? @map("id_token")
+  sessionState      String? @map("session_state")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@map("accounts")
 }
+
+// ========================================
+// セッション管理テーブル
+// ========================================
 
 model Session {
   id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("sessions")
 }
+
+// ========================================
+// ユーザー管理テーブル
+// ========================================
 
 model User {
   id            String    @id @default(cuid())
   name          String?
   email         String    @unique
-  emailVerified DateTime?
+  emailVerified DateTime? @map("email_verified")
   image         String?
   password      String?
   role          String    @default("user")
-  tenantId      String?   // テナントIDを追加
-  createdAt     DateTime  @default(now())
+  tenantId      String?   @map("tenant_id") // テナントIDを追加
+  createdAt     DateTime  @default(now()) @map("created_at")
   tenant        Tenant?   @relation(fields: [tenantId], references: [id])
   accounts      Account[]
   sessions      Session[]
   chatSessions  ChatSession[]
+  @@map("app_users")
 }
+
+// ========================================
+// 認証トークン管理テーブル
+// ========================================
 
 model VerificationToken {
   identifier String
@@ -58,7 +77,13 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+  @@map("verification_tokens")
 }
+
+// ========================================
+// テナント管理テーブル
+// 役割: マルチテナントをサポートし、各テナントのデータを分離
+// ========================================
 
 model Tenant {
   id           String   @id @default(cuid())
@@ -67,65 +92,96 @@ model Tenant {
   countryCode  String   @map("country_code")
   createdAt    DateTime @default(now()) @map("created_at")
   users        User[]
-  invoices     Invoice[]
+  chatFiles    ChatFile[] // InvoiceをChatFileに変更
   ocrResults   OcrResult[]
   reconciliations Reconciliation[]
   journalEntries JournalEntry[]
   claudePredictions ClaudePrediction[]
   mfJournalEntries MfJournalEntry[]
+  @@map("tenants")
 }
 
-model Invoice {
-  id           String   @id @default(cuid())
-  tenantId     String   @map("tenant_id")
-  projectId    String?  @map("project_id")
-  vendorName   String?  @map("vendor_name")
-  invoiceNumber String? @map("invoice_number")
-  invoiceDate  DateTime? @map("invoice_date")
-  dueDate      DateTime? @map("due_date")
-  totalAmount  Float?   @map("total_amount")
-  currency     String?  @default("JPY")
-  status       String?  @default("pending")
-  fileUrl      String?  @map("file_url")
-  ocrResult      String?  @map("ocr_result")
-  aiResult     Json?    @map("ai_result")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+// ========================================
+// チャットファイル処理テーブル（Invoiceの代わり）
+// ========================================
+model ChatFile {
 
-  tenant       Tenant   @relation(fields: [tenantId], references: [id])
-  ocrResults   OcrResult[]
-  reconciliations Reconciliation[]
+  id               String    @id @default(cuid())
+  difyId           String    @map("dify_id") // Dify会話ID（必須）
+  fileUrl          String?   @map("file_url") // ファイルURL
+  fileName         String?   @map("file_name") // ファイル名
+  fileSize         Int?      @map("file_size") // ファイルサイズ（バイト）
+  mimeType         String?   @map("mime_type") // MIMEタイプ
+  ocrResult        String?   @map("ocr_result") // OCR結果JSON文字列
+  aiResult         Json?     @map("ai_result") // AI解析結果JSON
+  extractedAmount  Float?    @map("extracted_amount") // 抽出された金額
+  extractedDate    DateTime? @map("extracted_date") // 抽出された日付
+  status           String?   @default("pending") @map("status") // pending/processing/completed/failed
+  errorMessage     String?   @map("error_message") // エラーメッセージ
+  processedAt      DateTime? @map("processed_at") // 処理完了時間
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // テナントリレーション
+  tenantId         String?   @map("tenant_id")
+  tenant           Tenant?   @relation(fields: [tenantId], references: [id])
+
+  // リレーション
+  chatSession      ChatSession @relation(fields: [difyId], references: [difyId], onDelete: Cascade)
+  ocrResults       OcrResult[]
   claudePredictions ClaudePrediction[]
+  reconciliations  Reconciliation[]
+
+  @@index([difyId])
+  @@index([status])
+  @@map("chat_files")
 }
+
+// ========================================
+// OCR結果保存テーブル
+// 役割: ファイルに対するOCR処理結果を保存
+// ========================================
 
 model OcrResult {
   id         String   @id @default(cuid())
-  tenantId   String   @map("tenant_id")
-  invoiceId  String?  @map("invoice_id")
+  tenantId   String?  @map("tenant_id") // オプショナルに変更
+  chatFileId String?  @map("chat_file_id") // InvoiceからChatFileに変更
   fileName   String   @map("file_name")
   ocrResult    String   @map("ocr_result")
   confidence Float?   @default(0.0)
   status     String?  @default("processing")
   createdAt  DateTime @default(now()) @map("created_at")
 
-  tenant     Tenant   @relation(fields: [tenantId], references: [id])
-  invoice    Invoice? @relation(fields: [invoiceId], references: [id])
+  tenant     Tenant?   @relation(fields: [tenantId], references: [id])
+  chatFile   ChatFile? @relation(fields: [chatFileId], references: [id])
+  @@map("ocr_results")
 }
+
+// ========================================
+// 照合管理テーブル
+// 役割: 請求書と仕訳の照合状態を管理
+// ========================================
 
 model Reconciliation {
   id            String   @id @default(cuid())
-  tenantId      String   @map("tenant_id")
-  invoiceId     String   @map("invoice_id")
+  tenantId      String?  @map("tenant_id") // オプショナルに変更
+  chatFileId    String?  @map("chat_file_id") // InvoiceからChatFileに変更
   journalEntryId String  @map("journal_entry_id")
   status        String?  @default("pending")
   notes         String?
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  tenant        Tenant      @relation(fields: [tenantId], references: [id])
-  invoice       Invoice     @relation(fields: [invoiceId], references: [id])
+  tenant        Tenant?     @relation(fields: [tenantId], references: [id])
+  chatFile      ChatFile?   @relation(fields: [chatFileId], references: [id])
   journalEntry  JournalEntry @relation(fields: [journalEntryId], references: [id])
+  @@map("reconciliations")
 }
+
+// ========================================
+// 仕訳データ保存テーブル
+// 役割: 会計システムの仕訳データを保存
+// ========================================
 
 model JournalEntry {
   id            String   @id @default(cuid())
@@ -142,6 +198,7 @@ model JournalEntry {
 
   tenant        Tenant          @relation(fields: [tenantId], references: [id])
   reconciliations Reconciliation[]
+  @@map("journal_entries")
 }
 
 // ========================================
@@ -149,8 +206,8 @@ model JournalEntry {
 // ========================================
 model ClaudePrediction {
   id                  String    @id @default(cuid())
-  tenantId            String    @map("tenant_id")
-  invoiceId           String?   @map("invoice_id")
+  tenantId            String?   @map("tenant_id") // オプショナルに変更
+  chatFileId          String?   @map("chat_file_id") // InvoiceからChatFileに変更
   
   // 入力データ（OCRから取得した情報）
   inputVendor         String    @map("input_vendor")         // OCR認識の取引先名
@@ -187,19 +244,21 @@ model ClaudePrediction {
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
   // リレーション
-  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  invoice             Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  tenant              Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  chatFile            ChatFile? @relation(fields: [chatFileId], references: [id], onDelete: SetNull)
   
   // インデックス
   @@index([tenantId, createdAt])
-  @@index([invoiceId])
+  @@index([chatFileId])
   @@index([status])
   @@map("claude_predictions")
 }
 
 // ========================================
 // Money Forward仕訳データ保存テーブル
+// 役割: Money Forwardへのエクスポート用仕訳データを管理
 // ========================================
+
 model MfJournalEntry {
   id                  String    @id @default(cuid())
   tenantId            String    @map("tenant_id")
@@ -259,15 +318,16 @@ model MfJournalEntry {
 // ========================================
 model ChatSession {
   id         String   @id @default(uuid()) // 自社システム内でのセッション識別子
-  userId     String   // ユーザーID（誰の会話か）
-  difyId     String   // Dify側のconversation_id
+  userId     String   @map("user_id") // ユーザーID（誰の会話か）
+  difyId     String   @map("dify_id") // Dify側のconversation_id
   title      String?  // サイドバーに表示する名称（任意に変更可能）
-  isPinned   Boolean  @default(false) // ピン留め状態
-  updatedAt  DateTime @updatedAt // 最終発言日時
-  createdAt  DateTime @default(now())
+  isPinned   Boolean  @default(false) @map("is_pinned") // ピン留め状態
+  updatedAt  DateTime @updatedAt @map("updated_at") // 最終発言日時
+  createdAt  DateTime @default(now()) @map("created_at")
 
   // リレーション
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatFiles  ChatFile[] // 一个会话对应多个文件
 
   @@index([userId, updatedAt])
   @@unique([difyId])
