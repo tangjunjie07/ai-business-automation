@@ -1,5 +1,5 @@
-
 # Copilot運用ガイド（Webアプリ用）
+
 ## API実装時の注意
 API実装する際は、必ず下記のAPIドキュメント（公式仕様）を事前に確認してください。
 - [docs/DifyAPI.md](../apps/web/docs/DifyAPI.md)
@@ -21,7 +21,6 @@ API実装する際は、必ず下記のAPIドキュメント（公式仕様）�
 - フロントエンドの動作確認は `apps/web/` 配下で `npm run dev` を推奨。
 - AIフロントエンド実装完了後は `npx tsc --noEmit` でTypeScriptエラーを解消すること。
 
-
 ## 注意事項
 - AI実装・Dify API関連の実装ルールは必ず docs/AI_IMPLEMENTATION_RULES.md を参照し、厳守してください。
 - secretsやAPIキーは絶対にクライアントへ渡さない。
@@ -30,4 +29,36 @@ API実装する際は、必ず下記のAPIドキュメント（公式仕様）�
 ---
 
 （Pythonやバックエンドサービスに関する記載は本ガイドには含めません）
+
+## DB UI (Prisma Studio)
+
+ローカルで Prisma Studio を起動して DB の UI を開くには、`apps/web` ディレクトリで下記を実行します。
+
+Unix（macOS / Linux / WSL）の例:
+
+```bash
+cd apps/web
+set -a && [ -f .env.local ] && source .env.local || true && set +a
+npx prisma studio
+```
+
+このコマンドは `.env.local` から `DATABASE_URL` を読み込み、Prisma Studio を起動します。Studio のデフォルト URL は `http://localhost:5555` です。
+
+起動を停止するにはターミナルで `Ctrl+C` を押すか、必要であれば以下でプロセスを終了できます：
+
+```bash
+pkill -f "prisma studio"
+```
+
+## DBスキーマ変更時の手順
+1. `apps/web/prisma/schema.prisma` を編集し、必要なモデル・リレーションを追加/修正/削除する。
+2. 設計ドキュメント（本ファイル等）も最新化。
+3. 下記コマンドを `apps/web` ディレクトリで順に実行：
+   ```bash
+   DATABASE_URL="<接続URL>" npx prisma migrate dev --name <migration_name>
+   DATABASE_URL="<接続URL>" npx prisma generate
+   # 必要に応じて
+   DATABASE_URL="<接続URL>" npx tsx prisma/seed.ts
+   ```
+4. 本番・ステージング反映時は `DB_MIGRATION_GUIDE.md` の安全運用手順に従うこと。
 

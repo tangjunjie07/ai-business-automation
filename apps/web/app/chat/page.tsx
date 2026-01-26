@@ -7,7 +7,10 @@ import { Sidebar } from '@/components/sidebar'
 import { ConfigPanel } from '@/components/config-panel'
 import { MessageList } from '@/components/message-list'
 import { ChatInput } from '@/components/chat-input'
+import { RenameModal } from '@/components/rename-modal'
+import AlertDialog from '@/components/alert-dialog'
 import { useChatStream } from '@/hooks/useChatStream'
+import { Trash, Edit } from 'lucide-react'
 
 // バックエンドAPI呼び出し時は必ず x-tenant-id ヘッダーを付与（RLS・テナント分離のため必須）
 
@@ -39,6 +42,10 @@ export default function ChatPage() {
   const tenantId = session?.user?.tenantId || null;
   const userId = session?.user?.id || null;
   const didInit = useRef(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isHeaderDropdownOpen, setIsHeaderDropdownOpen] = useState(false);
+  const [renameModal, setRenameModal] = useState<{ show: boolean; id: string | null; name: string }>({ show: false, id: null, name: '' });
+  const [confirmDialog, setConfirmDialog] = useState<{ show: boolean; type: 'pin' | 'delete' | null; id?: string; currentPinned?: boolean; message?: string }>({ show: false, type: null });
 
   useEffect(() => {
     if (status !== 'authenticated') return;
@@ -155,6 +162,148 @@ export default function ChatPage() {
     };
   }, [session, status, router, fetchHistory]); // 初期化処理とイベントリスナーをまとめて管理
 
+  // メッセージが更新されたら自動スクロール
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
+
+  // ドロップダウン外クリックで閉じる
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isHeaderDropdownOpen && !(event.target as Element).closest('.header-dropdown')) {
+        setIsHeaderDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isHeaderDropdownOpen]);
+
+  // conversationIdが変更されたらヘッダータイトルを更新
+  useEffect(() => {
+    if (conversationId && sessions.length > 0) {
+      const selectedSession = sessions.find(s => s.difyId === conversationId);
+      if (selectedSession) {
+        setHeaderTitle(selectedSession.title);
+      }
+    } else if (!conversationId) {
+      setHeaderTitle('経理担当AI');
+    }
+  }, [conversationId, sessions]);
+
+  // ヘッダードロップダウンの確認アクション
+  async function handleHeaderConfirmAction() {
+    if (!confirmDialog.type || !confirmDialog.id) return;
+    const id = confirmDialog.id;
+    try {
+      if (confirmDialog.type === 'pin') {
+        const nextPinned = !confirmDialog.currentPinned;
+        await fetch(`/api/dify/chat-sessions/${id}/pin`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId || '' },
+          body: JSON.stringify({ isPinned: nextPinned }),
+        });
+        setSessions(prev => prev.map(s => s.difyId === id ? { ...s, isPinned: nextPinned } : s));
+      } else if (confirmDialog.type === 'delete') {
+        await fetch(`/api/dify/conversations/${id}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId || '' },
+          body: JSON.stringify({ user: userId || '' }),
+        });
+        setSessions(prev => prev.filter(s => s.difyId !== id));
+        if (conversationId === id) {
+          setConversationId(null);
+          setInput('');
+          resetAll();
+          if (typeof window !== 'undefined') localStorage.setItem('last_conversation_id', '');
+        }
+      }
+    } catch (e) {
+      console.warn('ヘッダーアクション失敗', e);
+    } finally {
+      setConfirmDialog({ show: false, type: null });
+      setIsHeaderDropdownOpen(false);
+    }
+  }
+
+  // ヘッダーの名前変更保存
+  async function handleHeaderRenameSave(newName: string) {
+    if (!renameModal.id || !tenantId || !userId) return;
+    const response = await fetch(`/api/dify/chat-sessions/${renameModal.id}/rename`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-tenant-id': tenantId,
+        'x-user-id': userId
+      },
+      body: JSON.stringify({ title: newName.trim() })
+    });
+    if (response.ok) {
+      setHeaderTitle(newName.trim());
+      setSessions(prev => prev.map(s => 
+        s.difyId === renameModal.id ? { ...s, title: newName.trim() } : s
+      ));
+    }
+    setRenameModal({ show: false, id: null, name: '' });
+    setIsHeaderDropdownOpen(false);
+  }
+
+  // ヘッダードロップダウンのクリックハンドラー
+  const handlePinClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConfirmDialog({
+      show: true,
+      type: 'pin',
+      id: conversationId || undefined,
+      currentPinned: sessions.find(s => s.difyId === conversationId)?.isPinned,
+      message: sessions.find(s => s.difyId === conversationId)?.isPinned ? 'ピン留めを解除しますか？' : 'この会話をピン留めしますか？'
+    });
+  };
+
+  const handleRenameClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenameModal({ show: true, id: conversationId, name: headerTitle });
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConfirmDialog({ show: true, type: 'delete', id: conversationId || undefined, message: 'この会話を削除しますか？' });
+  };
+
+  // 共通のアクション関数
+  const handlePinAction = async (id: string, currentPinned: boolean) => {
+    const nextPinned = !currentPinned;
+    await fetch(`/api/dify/chat-sessions/${id}/pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId || '' },
+      body: JSON.stringify({ isPinned: nextPinned }),
+    });
+  };
+
+  const handleDeleteAction = async (id: string) => {
+    await fetch(`/api/dify/conversations/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId || '' },
+      body: JSON.stringify({ user: userId || '' }),
+    });
+  };
+
+  const handleRenameAction = async (id: string, newName: string) => {
+    const response = await fetch(`/api/dify/chat-sessions/${id}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId || '' },
+      body: JSON.stringify({ title: newName }),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error('名前変更に失敗しました');
+    }
+  };
+
   // 送信時: useChatStreamのsendMessageのみを利用
   const handleSend = () => {
     if (!input.trim() || !tenantId) return;
@@ -241,7 +390,8 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 bg-chatbot-bg text-gray-900 dark:text-gray-100 overflow-hidden relative transition-colors duration-300">
+    <>
+      <div className="flex h-full min-h-0 bg-chatbot-bg text-gray-900 dark:text-gray-100 overflow-hidden relative transition-colors duration-300">
       {/* 左サイドバー: デフォルト非表示、展開時のみDify風シャドウ */}
       <aside className={`transition-all duration-300 ${isLeftOpen ? 'w-64 shadow-lg bg-chatbot-bg z-10 h-full' : 'w-0 h-0 min-h-0'} overflow-hidden relative flex flex-col min-h-0`}>
         {isLeftOpen && (
@@ -276,6 +426,10 @@ export default function ChatPage() {
               tenantId={tenantId ?? undefined}
               userId={userId ?? undefined}
               currentSessionId={conversationId ?? undefined}
+              setSessions={setSessions}
+              onPinAction={handlePinAction}
+              onDeleteAction={handleDeleteAction}
+              onRenameAction={handleRenameAction}
             />
           </div>
         )}
@@ -284,7 +438,7 @@ export default function ChatPage() {
       {/* 中央チャット */}
       <main className="flex-1 flex flex-col min-h-0 bg-chatbot-bg relative h-full transition-colors duration-300">
         {/* ヘッダー: サイドバー開閉ボタン（常に表示し、状態に応じてトグルする） */}
-        <header className="h-14 flex items-center px-4 justify-between bg-chatbot-bg z-10 sticky top-0 transition-colors duration-300">
+        <header className="h-14 flex items-center px-4 justify-between bg-chatbot-bg z-[100] sticky top-0 transition-colors duration-300">
           <div className={isLeftOpen ? 'hidden' : 'flex items-center gap-2'}>
             {/* 左: サイドバー開閉とコンパクト表示 */}
             {!isLeftOpen && (
@@ -304,12 +458,44 @@ export default function ChatPage() {
               </span>
             </div>
             <div className="p-1 text-divider-deep">/</div>
-            <div className="inline-block" data-state="closed">
-              <div className="flex items-center rounded-lg p-1.5 pl-2 text-text-secondary">
-                <div className="system-md-semibold">
-                  {headerTitle || '経理担当AI'}
+            <div className="inline-block header-dropdown relative" data-state="closed">
+              {conversationId ? (
+                <div 
+                  className={`flex cursor-pointer items-center rounded-lg p-1.5 pl-2 text-text-secondary hover:bg-state-base-hover ${isHeaderDropdownOpen ? 'bg-state-base-hover' : ''}`}
+                  onClick={() => setIsHeaderDropdownOpen(!isHeaderDropdownOpen)}
+                >
+                  <div className="system-md-semibold truncate max-w-xs">
+                    {headerTitle}
+                  </div>
+                  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" className="remixicon h-4 w-4 ml-1 flex-shrink-0">
+                    <path d="M11.9999 13.1714L16.9497 8.22168L18.3639 9.63589L11.9999 15.9999L5.63599 9.63589L7.0502 8.22168L11.9999 13.1714Z"></path>
+                  </svg>
                 </div>
-              </div>
+              ) : (
+                <div className="flex items-center rounded-lg p-1.5 pl-2 text-text-secondary">
+                  <div className="system-md-semibold truncate max-w-xs">
+                    {headerTitle}
+                  </div>
+                </div>
+              )}
+              {isHeaderDropdownOpen && conversationId && (
+                <div className="absolute top-full left-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-[200] header-dropdown">
+                  <div className="py-1">
+                    <button type="button" className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-gray-700 dark:text-gray-300 hover:bg-state-base-hover" onClick={handlePinClick}>
+                      <svg className="h-3 w-3 shrink-0 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2L8 4H5V8L2 11V13H5L8 16V20H10V16L13 13V9H10L7 6V4H10L6 0Z"/></svg>
+                      <span className="truncate">{sessions.find(s => s.difyId === conversationId)?.isPinned ? 'ピン留め解除' : 'ピン留め'}</span>
+                    </button>
+                    <button type="button" className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-gray-700 dark:text-gray-300 hover:bg-state-base-hover" onClick={handleRenameClick}>
+                      <Edit className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
+                      <span className="truncate">名前変更</span>
+                    </button>
+                    <button type="button" className="system-sm-regular group flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900 dark:hover:text-red-400" onClick={handleDeleteClick}>
+                      <Trash className="h-4 w-4 shrink-0 text-red-600 group-hover:text-red-700 dark:group-hover:text-red-400" />
+                      <span className="truncate">削除</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex items-center px-1"><div className="h-[14px] w-px bg-divider-regular"></div></div>
             <div data-state="closed">
@@ -352,6 +538,7 @@ export default function ChatPage() {
           <div className="flex-1 overflow-y-auto pb-60 chat-scrollbar">
             <div className="max-w-3xl mx-auto w-full p-4 md:p-8 space-y-6 min-h-[200px] flex flex-col justify-end">
               <MessageList messages={messages} session={session ?? undefined} currentTask={currentTask} isLoading={isLoading} streamError={streamError} />
+              <div ref={messagesEndRef} />
               {messages.length === 0 && (
                 <div className="text-center text-gray-400 py-12 select-none">私は高度な専門知識を持つプロの経理担当AIです。
 提供された請求書データ（OCR原文と構造化抽出結果）に基づき、最も適切な「勘定科目」と「補助科目」を特定し、仕訳データを作成することができます。</div>
@@ -402,5 +589,25 @@ export default function ChatPage() {
         )}
       </aside>
     </div>
+
+    <RenameModal
+      isShow={renameModal.show}
+      saveLoading={false}
+      name={renameModal.name}
+      onClose={() => { setRenameModal({ show: false, id: null, name: '' }); setIsHeaderDropdownOpen(false); }}
+      onSave={handleHeaderRenameSave}
+      zIndex={99999}
+    />
+    <AlertDialog
+      isOpen={confirmDialog.show}
+      title={confirmDialog.type === 'delete' ? '会話を削除' : '確認'}
+      description={confirmDialog.message || ''}
+      confirmText={confirmDialog.type === 'delete' ? '削除' : '確認'}
+      cancelText="キャンセル"
+      intent={confirmDialog.type === 'delete' ? 'danger' : 'default'}
+      onCancel={() => { setConfirmDialog({ show: false, type: null }); setIsHeaderDropdownOpen(false); }}
+      onConfirm={handleHeaderConfirmAction}
+    />
+    </>
   );
 }

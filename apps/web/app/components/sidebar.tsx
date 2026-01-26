@@ -9,20 +9,15 @@ import config from '@/config'
 
 
 // sessions: {difyId, title, isPinned, updatedAt}[]
-export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onNewChat, onRename, messages = [], tenantId, userId, currentSessionId }: { sessions?: { difyId: string; title: string; isPinned: boolean; updatedAt: number }[]; onSelect?: (id: string) => void; onClose?: () => void; onPin?: (id: string) => void; onDelete?: (id: string) => void; onNewChat?: () => void; onRename?: (id: string, name: string) => void; messages?: unknown[]; tenantId?: string; userId?: string; currentSessionId?: string }) {
+export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onNewChat, onRename, messages = [], tenantId, userId, currentSessionId, setSessions, onPinAction, onDeleteAction, onRenameAction }: { sessions?: { difyId: string; title: string; isPinned: boolean; updatedAt: number }[]; onSelect?: (id: string) => void; onClose?: () => void; onPin?: (id: string) => void; onDelete?: (id: string) => void; onNewChat?: () => void; onRename?: (id: string, name: string) => void; messages?: unknown[]; tenantId?: string; userId?: string; currentSessionId?: string; setSessions: React.Dispatch<React.SetStateAction<{ difyId: string; title: string; isPinned: boolean; updatedAt: number }[]>>; onPinAction?: (id: string, currentPinned: boolean) => Promise<void>; onDeleteAction?: (id: string) => Promise<void>; onRenameAction?: (id: string, newName: string) => Promise<void> }) {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [renameModal, setRenameModal] = useState<{ show: boolean; id: string | null; name: string }>({ show: false, id: null, name: '' });
   const [renameLoading, setRenameLoading] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{ show: boolean; type: 'pin' | 'delete' | null; id?: string; currentPinned?: boolean; message?: string }>({ show: false, type: null });
-  const [localSessions, setLocalSessions] = useState(sessions);
-
-  useEffect(() => {
-    setLocalSessions(sessions);
-  }, [sessions]);
 
   // sessionsからピン留め・非ピン留め分離
-  const pinnedItems = localSessions.filter(i => i.isPinned);
-  const unpinnedItems = localSessions.filter(i => !i.isPinned);
+  const pinnedItems = sessions.filter(i => i.isPinned);
+  const unpinnedItems = sessions.filter(i => !i.isPinned);
 
   async function togglePinLocal(id: string, currentPinned: boolean) {
     // show confirmation dialog instead of native confirm
@@ -38,22 +33,11 @@ export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onN
     if (!renameModal.id) return;
     setRenameLoading(true);
     try {
-      const response = await fetch(`/api/dify/chat-sessions/${renameModal.id}/rename`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId || '' },
-        body: JSON.stringify({ title: newName }),
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error('名前変更に失敗しました');
-      }
+      if (onRenameAction) await onRenameAction(renameModal.id, newName);
       setRenameModal({ show: false, id: null, name: '' });
       if (onRename) onRename(renameModal.id, newName);
     } catch (error) {
-      // エラーハンドリングを削除
+      console.warn('名前変更失敗', error);
     } finally {
       setRenameLoading(false);
     }
@@ -68,26 +52,15 @@ export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onN
     const id = confirmDialog.id;
     try {
       if (confirmDialog.type === 'pin') {
-        const nextPinned = !confirmDialog.currentPinned;
-        await fetch(`/api/dify/chat-sessions/${id}/pin`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId || '' },
-          body: JSON.stringify({ isPinned: nextPinned }),
-        });
-        setLocalSessions(prev => prev.map(s => s.difyId === id ? { ...s, isPinned: nextPinned } : s));
-        if (onPin) onPin(id);
+        if (onPinAction) await onPinAction(id, confirmDialog.currentPinned || false);
+        setSessions(prev => prev.map(s => s.difyId === id ? { ...s, isPinned: !confirmDialog.currentPinned } : s));
       } else if (confirmDialog.type === 'delete') {
-        await fetch(`/api/dify/conversations/${id}`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json', 'x-tenant-id': tenantId || '' },
-          body: JSON.stringify({ user: userId || '' }),
-        });
-        setLocalSessions(prev => prev.filter(s => s.difyId !== id));
+        if (onDeleteAction) await onDeleteAction(id);
+        setSessions(prev => prev.filter(s => s.difyId !== id));
         if (onDelete) onDelete(id);
-        // 削除後に新規チャットに切り替えるのは選択済みの場合のみ（onDeleteコールバック内で処理）
       }
     } catch (e) {
-      // ignore; UI will remain stable
+      console.warn('サイドバーアクション失敗', e);
     } finally {
       setConfirmDialog({ show: false, type: null });
     }
@@ -142,16 +115,16 @@ export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onN
                           </button>
                           {menuOpenId === item.difyId && (
                               <div className="absolute right-3 top-full mt-2 w-36 rounded-xl border-[0.5px] border-components-panel-border bg-white dark:bg-[#0b0b0b] p-1 shadow-lg z-[9999]" onClick={(e) => e.stopPropagation()}>
-                              <div className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-text-secondary hover:bg-state-base-hover" onClick={() => { togglePinLocal(item.difyId, item.isPinned); setMenuOpenId(null); }}>
-                                <svg className="h-3 w-3 shrink-0 text-text-tertiary" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2L8 4H5V8L2 11V13H5L8 16V20H10V16L13 13V9H10L7 6V4H10L6 0Z"/></svg>
+                              <div className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-gray-700 dark:text-gray-300 hover:bg-state-base-hover" onClick={(e) => { e.stopPropagation(); togglePinLocal(item.difyId, item.isPinned); setMenuOpenId(null); }}>
+                                <svg className="h-3 w-3 shrink-0 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2L8 4H5V8L2 11V13H5L8 16V20H10V16L13 13V9H10L7 6V4H10L6 0Z"/></svg>
                                 <span className="truncate">{item.isPinned ? 'ピン留め解除' : 'ピン留め'}</span>
                               </div>
-                              <div className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-text-secondary hover:bg-state-base-hover" onClick={() => { handleRename(item.difyId); setMenuOpenId(null); }}>
-                                <Edit className="h-4 w-4 shrink-0 text-text-tertiary" />
+                              <div className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-gray-700 dark:text-gray-300 hover:bg-state-base-hover" onClick={(e) => { e.stopPropagation(); handleRename(item.difyId); setMenuOpenId(null); }}>
+                                <Edit className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
                                 <span className="truncate">名前変更</span>
                               </div>
-                              <div className="system-sm-regular group flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-text-secondary hover:bg-state-destructive-hover hover:text-text-destructive" onClick={() => { handleDelete(item.difyId); setMenuOpenId(null); }}>
-                                <Trash className="h-4 w-4 shrink-0 text-text-tertiary group-hover:text-text-destructive" />
+                              <div className="system-sm-regular group flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900 dark:hover:text-red-400" onClick={(e) => { e.stopPropagation(); handleDelete(item.difyId); setMenuOpenId(null); }}>
+                                <Trash className="h-4 w-4 shrink-0 text-red-600 group-hover:text-red-700 dark:group-hover:text-red-400" />
                                 <span className="truncate">削除</span>
                               </div>
                             </div>
@@ -179,20 +152,20 @@ export function Sidebar({ sessions = [], onSelect, onClose, onPin, onDelete, onN
                     </button>
                     {menuOpenId === item.difyId && (
                       <div className="absolute right-3 top-full mt-2 w-36 rounded-xl border-[0.5px] border-components-panel-border bg-white dark:bg-[#0b0b0b] p-1 shadow-lg z-[9999]" onClick={(e) => e.stopPropagation()}>
-                        <div className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-text-secondary hover:bg-state-base-hover" onClick={() => { togglePinLocal(item.difyId, item.isPinned); setMenuOpenId(null); }}>
+                        <div className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-gray-700 dark:text-gray-300 hover:bg-state-base-hover" onClick={(e) => { e.stopPropagation(); togglePinLocal(item.difyId, item.isPinned); setMenuOpenId(null); }}>
                           {item.isPinned ? (
-                            <svg className="h-4 w-4 shrink-0 text-text-tertiary" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2L8 4H5V8L2 11V13H5L8 16V20H10V16L13 13V9H10L7 6V4H10L6 0Z"/></svg>
+                            <svg className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2L8 4H5V8L2 11V13H5L8 16V20H10V16L13 13V9H10L7 6V4H10L6 0Z"/></svg>
                           ) : (
-                            <svg className="h-4 w-4 shrink-0 text-text-tertiary" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2L8 4H5V8L2 11V13H5L8 16V20H10V16L13 13V9H10L7 6V4H10L6 0Z"/></svg>
+                            <svg className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2L8 4H5V8L2 11V13H5L8 16V20H10V16L13 13V9H10L7 6V4H10L6 0Z"/></svg>
                           )}
                           <span className="truncate">{item.isPinned ? 'ピン留め解除' : 'ピン留め'}</span>
                         </div>
-                        <div className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-text-secondary hover:bg-state-base-hover" onClick={() => { handleRename(item.difyId); setMenuOpenId(null); }}>
-                          <svg className="h-4 w-4 shrink-0 text-text-tertiary" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+                        <div className="system-sm-regular flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-gray-700 dark:text-gray-300 hover:bg-state-base-hover" onClick={(e) => { e.stopPropagation(); handleRename(item.difyId); setMenuOpenId(null); }}>
+                          <svg className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
                           <span className="truncate">名前変更</span>
                         </div>
-                        <div className="system-sm-regular group flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-text-secondary hover:bg-state-destructive-hover hover:text-text-destructive" onClick={() => { handleDelete(item.difyId); setMenuOpenId(null); }}>
-                          <svg className="h-4 w-4 shrink-0 text-text-tertiary group-hover:text-text-destructive" viewBox="0 0 24 24" fill="currentColor"><path d="M6 7h12v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7zM9 4h6l1 1H8l1-1z"/></svg>
+                        <div className="system-sm-regular group flex cursor-pointer items-center space-x-2 rounded-lg px-2 py-1 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900 dark:hover:text-red-400" onClick={(e) => { e.stopPropagation(); handleDelete(item.difyId); setMenuOpenId(null); }}>
+                          <svg className="h-4 w-4 shrink-0 text-red-600 group-hover:text-red-700 dark:group-hover:text-red-400" viewBox="0 0 24 24" fill="currentColor"><path d="M6 7h12v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7zM9 4h6l1 1H8l1-1z"/></svg>
                           <span className="truncate">削除</span>
                         </div>
                       </div>

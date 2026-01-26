@@ -70,6 +70,7 @@ export const useChatStream = () => {
           query,
           conversation_id: conversationId && conversationId !== 'null' ? conversationId : undefined,
           user: userId,
+          inputs: {tenantId: tenantId},
           files: files?.map(f => ({
             type: f.type || 'image', // デフォルト image
             transfer_method: 'local_file',
