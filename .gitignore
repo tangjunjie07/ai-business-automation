@@ -1,0 +1,60 @@
+# Generated .gitignore — added by GitHub Copilot
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.pytest_cache
+pip-wheel-metadata/
+*.egg-info/
+
+# Environment files
+.env
+.env.*
+env.local
+.env.local
+
+# macOS
+.DS_Store
+
+# Node / Next.js / build
+node_modules/
+.next/
+dist/
+build/
+
+# Logs / DB
+*.log
+*.sqlite3
+
+# Test coverage / reports
+coverage.xml
+htmlcov/
+
+# Temp
+tmp/
+/tmp/
+
+# Docker / CI
+.docker
+docker-compose.override.yml
+
+# IDEs / editors
+/.idea
+.vscode
+
+# Other
+cache/
+.cache
+
+# Ignore compiled assets and caches
+__pycache__/
+
+# Misc duplicates (kept for user-provided entries)
+.venv
+venv/
+node_modules/
+
+# End of .gitignore
