@@ -10,6 +10,13 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'upload.dify.ai',
       },
+      // 加上你自己的服务器地址
+      {
+        protocol: 'http',
+        hostname: '172.207.84.114',
+        port: '3000',
+        pathname: '/**',
+      },
     ],
   },
 };
