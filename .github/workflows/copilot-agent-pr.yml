@@ -3,10 +3,12 @@ name: Copilot Agent (OpenAI + PR)
 on:
   issue_comment:
     types: [created]
+  issues:
+    types: [labeled]
 
 jobs:
   agent:
-    if: contains(github.event.comment.body, '@copilot') && !contains(github.event.comment.body, '@copilot merge')
+    if: (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@copilot') && !contains(github.event.comment.body, '@copilot merge')) || (github.event_name == 'issues' && github.event.label.name == 'copilot-ready')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -36,17 +38,35 @@ jobs:
             const issue = context.payload.issue;
             const labels = (issue.labels || []).map(label => label.name);
             const ready = labels.includes('copilot-ready');
+            const responded = labels.includes('copilot-responded');
+            const isManual = context.eventName === 'issue_comment';
+            const allowed = !isManual || responded;
+
             core.setOutput('ready', ready ? 'true' : 'false');
+            core.setOutput('allowed', allowed ? 'true' : 'false');
+
             if (!ready) {
               core.info('Issue に copilot-ready が付いていないため、実行をスキップします。');
             }
+            if (!allowed) {
+              core.info('AI 応答前の手動 @copilot は受け付けません。');
+            }
 
-      - name: Install OpenAI SDK
-        if: steps.ready.outputs.ready == 'true'
-        run: npm install openai --no-save --package-lock=false
+      - name: Mark copilot running
+        if: steps.ready.outputs.ready == 'true' && steps.ready.outputs.allowed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number: context.issue.number,
+              labels: ['copilot-running']
+            });
 
       - name: Build conversation prompt
-        if: steps.ready.outputs.ready == 'true'
+        if: steps.ready.outputs.ready == 'true' && steps.ready.outputs.allowed == 'true'
         id: prompt
         uses: actions/github-script@v7
         with:
@@ -127,20 +147,28 @@ jobs:
             core.setOutput("prompt", prompt);
 
       - name: Run Inline Agent (OpenAI)
-        if: steps.ready.outputs.ready == 'true'
+        if: steps.ready.outputs.ready == 'true' && steps.ready.outputs.allowed == 'true'
         env:
           AGENT_PROMPT: ${{ steps.prompt.outputs.prompt }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_API_VERSION: ${{ secrets.AZURE_OPENAI_API_VERSION }}
+          AZURE_OPENAI_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_DEPLOYMENT }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           BRANCH: ${{ env.BRANCH }}
         run: |
           node <<'EOF'
           const fs = require('fs');
           const path = require('path');
-          const OpenAI = require('openai').default;
           const { execSync } = require('child_process');
 
           const prompt = process.env.AGENT_PROMPT || 'Apply a minimal code change.';
           const branch = process.env.BRANCH;
+          const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
+          const apiKey = process.env.AZURE_OPENAI_API_KEY;
+          const apiVersion = process.env.AZURE_OPENAI_API_VERSION;
+          const deployment = process.env.AZURE_OPENAI_DEPLOYMENT;
+          const model = process.env.OPENAI_MODEL;
 
           const envFile = process.env.GITHUB_ENV;
           const setEnv = (key, value) => {
@@ -150,25 +178,63 @@ jobs:
 
           (async () => {
             try {
-              const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+              if (!endpoint || !apiKey || !apiVersion || !deployment) {
+                const message = [
+                  'Azure OpenAI の設定が不足しています。',
+                  'AZURE_OPENAI_ENDPOINT / AZURE_OPENAI_API_KEY / AZURE_OPENAI_API_VERSION / AZURE_OPENAI_DEPLOYMENT を設定してください。',
+                  '設定後、もう一度 @copilot をメンションしてください。'
+                ].join('\n');
+                const responsePath = path.join(process.cwd(), 'agent-response.txt');
+                fs.writeFileSync(responsePath, message, 'utf-8');
+                setEnv('CHANGED', 'false');
+                setEnv('RESPONSE_TYPE', 'quota');
+                return;
+              }
 
-              const res = await client.chat.completions.create({
-                model: 'gpt-4o-mini',
+              const url = `${endpoint.replace(/\\/$/, '')}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+              const payload = {
                 messages: [
-                  { role: 'system', content: 'You are a coding agent for this repository. Read the provided context and output a unified diff patch only. Do not include code fences or explanations.' },
+                  { role: 'system', content: 'You are a coding agent for this repository. If you can implement the fix, output a unified diff patch only. If requirements are unclear, ask concise clarifying questions in Japanese, without code fences.' },
                   { role: 'user', content: prompt }
                 ],
                 temperature: 0.7,
                 max_tokens: 3000
+              };
+              if (model) payload.model = model;
+
+              const res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'api-key': apiKey
+                },
+                body: JSON.stringify(payload)
               });
 
-              const patch = (res.choices?.[0]?.message?.content || '').trim();
-              if (!patch.startsWith('diff --git')) {
-                throw new Error('Model did not return a unified diff patch.');
+              if (!res.ok) {
+                const body = await res.text();
+                const error = new Error(`Azure OpenAI request failed: ${res.status} ${body}`);
+                error.status = res.status;
+                throw error;
+              }
+
+              const data = await res.json();
+              const output = (data.choices?.[0]?.message?.content || '').trim();
+              if (!output) {
+                throw new Error('Model returned empty output.');
+              }
+
+              const responsePath = path.join(process.cwd(), 'agent-response.txt');
+              fs.writeFileSync(responsePath, output, 'utf-8');
+
+              if (!output.startsWith('diff --git')) {
+                setEnv('CHANGED', 'false');
+                setEnv('RESPONSE_TYPE', 'question');
+                return;
               }
 
               const patchPath = path.join(process.cwd(), 'agent.patch');
-              fs.writeFileSync(patchPath, patch, 'utf-8');
+              fs.writeFileSync(patchPath, output, 'utf-8');
               execSync(`git apply --whitespace=fix ${patchPath}`);
 
               execSync('git config user.name "Copilot Agent"');
@@ -186,8 +252,23 @@ jobs:
               execSync(`git push origin ${branch} --force`);
 
               setEnv('CHANGED', 'true');
+              setEnv('RESPONSE_TYPE', 'patch');
               console.log('Changes pushed to branch:', branch);
             } catch (err) {
+              const status = err?.status;
+              const code = err?.error?.code;
+              if (status === 429 || code === 'insufficient_quota') {
+                const message = [
+                  'OpenAI API の利用上限に達したため処理を続行できません。',
+                  '管理者に連絡して API の課金・上限設定を確認してください。',
+                  '上限が回復したら、もう一度 @copilot をメンションしてください。'
+                ].join('\n');
+                const responsePath = path.join(process.cwd(), 'agent-response.txt');
+                fs.writeFileSync(responsePath, message, 'utf-8');
+                setEnv('CHANGED', 'false');
+                setEnv('RESPONSE_TYPE', 'quota');
+                return;
+              }
               console.error('Agent run failed:', err);
               process.exit(1);
             }
@@ -195,7 +276,7 @@ jobs:
           EOF
 
       - name: Run web tests
-        if: env.CHANGED == 'true'
+        if: env.CHANGED == 'true' && steps.ready.outputs.allowed == 'true'
         env:
           CI: true
         run: |
@@ -221,7 +302,7 @@ jobs:
           exit 0
 
       - name: Publish test report html
-        if: env.CHANGED == 'true'
+        if: env.CHANGED == 'true' && steps.ready.outputs.allowed == 'true'
         run: |
           node <<'EOF'
           const fs = require('fs');
@@ -252,7 +333,7 @@ jobs:
           git add docs/index.html agent-test-report.txt
 
       - name: Post test questions
-        if: env.CHANGED == 'true' && env.TEST_STATUS == 'failed'
+        if: env.CHANGED == 'true' && env.TEST_STATUS == 'failed' && steps.ready.outputs.allowed == 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -284,7 +365,7 @@ jobs:
             });
 
       - name: Create or Update Pull Request
-        if: env.CHANGED == 'true'
+        if: env.CHANGED == 'true' && steps.ready.outputs.allowed == 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -323,13 +404,22 @@ jobs:
             });
 
       - name: Reply to issue
-        if: steps.ready.outputs.ready == 'true'
+        if: steps.ready.outputs.ready == 'true' && steps.ready.outputs.allowed == 'true'
         uses: actions/github-script@v7
         with:
           script: |
-            const message = process.env.CHANGED == 'true'
-              ? '変更が用意できました。copilot ブランチから PR を作成しました。'
-              : '変更が生成されませんでした。もう一度試す場合は依頼内容を具体化してください。';
+            const fs = require('fs');
+            const responsePath = `${process.env.GITHUB_WORKSPACE}/agent-response.txt`;
+            const responseText = fs.existsSync(responsePath) ? fs.readFileSync(responsePath, 'utf-8') : '';
+            const responseType = process.env.RESPONSE_TYPE;
+            const isQuestion = responseType === 'question' && responseText.trim().length > 0;
+            const isQuota = responseType === 'quota' && responseText.trim().length > 0;
+
+            const message = (isQuestion || isQuota)
+              ? responseText
+              : (process.env.CHANGED == 'true'
+                ? '変更が用意できました。copilot ブランチから PR を作成しました。'
+                : '変更が生成されませんでした。もう一度試す場合は依頼内容を具体化してください。');
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -337,6 +427,36 @@ jobs:
               issue_number: context.issue.number,
               body: message
             });
+
+      - name: Mark copilot responded
+        if: steps.ready.outputs.ready == 'true' && steps.ready.outputs.allowed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number: context.issue.number,
+              labels: ['copilot-responded']
+            });
+
+      - name: Clear copilot running
+        if: steps.ready.outputs.ready == 'true' && steps.ready.outputs.allowed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            try {
+              await github.rest.issues.removeLabel({
+                owner,
+                repo,
+                issue_number: context.issue.number,
+                name: 'copilot-running'
+              });
+            } catch (err) {
+              if (err.status !== 404) throw err;
+            }
 
   auto-merge:
     if: contains(github.event.comment.body, '@copilot merge')

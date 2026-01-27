@@ -55,3 +55,11 @@ body:
       description: ログ、コンソール出力、スクリーンショットがあれば追加してください。なければ N/A と記載してください。
     validations:
       required: false
+  - type: textarea
+    id: related
+    attributes:
+      label: 関連ファイル / 関連箇所
+      description: 心当たりのあるファイルや画面、API などがあれば記載してください。
+      placeholder: "例: apps/web/app/auth/signin/page.tsx"
+    validations:
+      required: false

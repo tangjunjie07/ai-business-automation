@@ -84,9 +84,4 @@ jobs:
               labels: [labelName]
             });
 
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: issue.number,
-              body: `@${context.payload.comment.user.login} ありがとうございます。情報が十分なので @copilot を開始できます。${labelName} ラベルを付与しました。次のPRをお待ちください。`
-            });
+            core.info('Issue is marked copilot-ready. No reply comment is posted.');
