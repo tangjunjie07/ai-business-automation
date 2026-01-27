@@ -246,13 +246,23 @@ jobs:
               }
 
               const data = await res.json();
-              const output = (data.choices?.[0]?.message?.content || '').trim();
+              let output = (data.choices?.[0]?.message?.content || '').trim();
               if (!output) {
                 throw new Error('Model returned empty output.');
               }
 
               const responsePath = path.join(process.cwd(), 'agent-response.txt');
               fs.writeFileSync(responsePath, output, 'utf-8');
+
+              // Normalize output: strip code fences and extract first unified diff
+              const fenced = output.match(/```(?:diff|patch)?\s*([\s\S]*?)```/i);
+              if (fenced && fenced[1]) {
+                output = fenced[1].trim();
+              }
+              const diffIndex = output.indexOf('diff --git');
+              if (diffIndex !== -1) {
+                output = output.slice(diffIndex).trim();
+              }
 
               if (!output.startsWith('diff --git')) {
                 setEnv('CHANGED', 'false');
@@ -262,6 +272,20 @@ jobs:
 
               const patchPath = path.join(process.cwd(), 'agent.patch');
               fs.writeFileSync(patchPath, output, 'utf-8');
+              try {
+                execSync(`git apply --check ${patchPath}`);
+              } catch (e) {
+                const message = [
+                  '生成された差分に問題があり、適用できませんでした。',
+                  'もう一度、破損のない unified diff を出力してください（diff --git から始まる形式）。',
+                  '不要な説明やコードブロックは含めないでください。'
+                ].join('\n');
+                const responsePath = path.join(process.cwd(), 'agent-response.txt');
+                fs.writeFileSync(responsePath, message, 'utf-8');
+                setEnv('CHANGED', 'false');
+                setEnv('RESPONSE_TYPE', 'question');
+                return;
+              }
               execSync(`git apply --whitespace=fix ${patchPath}`);
 
               execSync('git config user.name "Copilot Agent"');
