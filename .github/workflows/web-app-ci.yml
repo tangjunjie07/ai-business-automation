@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd apps/web
-          npm ci
+          npm install --no-audit --no-fund
 
       - name: Generate Prisma client
         run: |
@@ -46,3 +46,35 @@ jobs:
         run: |
           cd apps/web
           npm run build
+
+  e2e:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: |
+          cd apps/web
+          npm install --no-audit --no-fund
+
+      - name: Install Playwright browsers
+        run: |
+          cd apps/web
+          npx playwright install --with-deps
+
+      - name: Build application
+        run: |
+          cd apps/web
+          npm run build
+
+      - name: Run Playwright E2E
+        run: |
+          cd apps/web
+          npm run test:e2e
