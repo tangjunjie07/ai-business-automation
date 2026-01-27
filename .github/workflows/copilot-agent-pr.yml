@@ -245,8 +245,45 @@ jobs:
                 throw error;
               }
 
-              const data = await res.json();
-              let output = (data.choices?.[0]?.message?.content || '').trim();
+              const callModel = async (extraInstruction = '') => {
+                const res = await fetch(url, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'api-key': apiKey
+                  },
+                  body: JSON.stringify({
+                    ...payload,
+                    messages: [
+                      ...payload.messages,
+                      ...(extraInstruction ? [{ role: 'system', content: extraInstruction }] : [])
+                    ]
+                  })
+                });
+                if (!res.ok) {
+                  const body = await res.text();
+                  const error = new Error(`Azure OpenAI request failed: ${res.status} ${body}`);
+                  error.status = res.status;
+                  throw error;
+                }
+                return res.json();
+              };
+
+              const normalize = (content) => {
+                let output = (content || '').trim();
+                const fenced = output.match(/```(?:diff|patch)?\s*([\s\S]*?)```/i);
+                if (fenced && fenced[1]) {
+                  output = fenced[1].trim();
+                }
+                const diffIndex = output.indexOf('diff --git');
+                if (diffIndex !== -1) {
+                  output = output.slice(diffIndex).trim();
+                }
+                return output;
+              };
+
+              const data = await callModel();
+              let output = normalize(data.choices?.[0]?.message?.content || '');
               if (!output) {
                 throw new Error('Model returned empty output.');
               }
@@ -254,39 +291,47 @@ jobs:
               const responsePath = path.join(process.cwd(), 'agent-response.txt');
               fs.writeFileSync(responsePath, output, 'utf-8');
 
-              // Normalize output: strip code fences and extract first unified diff
-              const fenced = output.match(/```(?:diff|patch)?\s*([\s\S]*?)```/i);
-              if (fenced && fenced[1]) {
-                output = fenced[1].trim();
-              }
-              const diffIndex = output.indexOf('diff --git');
-              if (diffIndex !== -1) {
-                output = output.slice(diffIndex).trim();
-              }
-
-              if (!output.startsWith('diff --git')) {
-                setEnv('CHANGED', 'false');
-                setEnv('RESPONSE_TYPE', 'question');
-                return;
-              }
-
-              const patchPath = path.join(process.cwd(), 'agent.patch');
-              fs.writeFileSync(patchPath, output, 'utf-8');
-              try {
+              const tryApply = (patchText) => {
+                const patchPath = path.join(process.cwd(), 'agent.patch');
+                fs.writeFileSync(patchPath, patchText, 'utf-8');
                 execSync(`git apply --check ${patchPath}`);
-              } catch (e) {
+                execSync(`git apply --whitespace=fix ${patchPath}`);
+              };
+
+              let applied = false;
+              if (output.startsWith('diff --git')) {
+                try {
+                  tryApply(output);
+                  applied = true;
+                } catch {
+                  applied = false;
+                }
+              }
+
+              if (!applied) {
+                const retry = await callModel('Output a valid unified diff only. It must start with "diff --git". Do not include explanations or code fences.');
+                output = normalize(retry.choices?.[0]?.message?.content || '');
+                fs.writeFileSync(responsePath, output, 'utf-8');
+                if (output.startsWith('diff --git')) {
+                  try {
+                    tryApply(output);
+                    applied = true;
+                  } catch {
+                    applied = false;
+                  }
+                }
+              }
+
+              if (!applied) {
                 const message = [
                   '生成された差分に問題があり、適用できませんでした。',
-                  'もう一度、破損のない unified diff を出力してください（diff --git から始まる形式）。',
-                  '不要な説明やコードブロックは含めないでください。'
+                  '自動再試行でも修復できなかったため、内容を少し詳しく書いて再度 @copilot をメンションしてください。'
                 ].join('\n');
-                const responsePath = path.join(process.cwd(), 'agent-response.txt');
                 fs.writeFileSync(responsePath, message, 'utf-8');
                 setEnv('CHANGED', 'false');
                 setEnv('RESPONSE_TYPE', 'question');
                 return;
               }
-              execSync(`git apply --whitespace=fix ${patchPath}`);
 
               execSync('git config user.name "Copilot Agent"');
               execSync('git config user.email "copilot-agent@github.com"');
