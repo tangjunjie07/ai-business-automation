@@ -206,6 +206,38 @@ html[data-theme="dark"] {
   cursor: pointer; /* クリックで拡大させる場合など */
 }
 
+/* prose 内のリンクを視認できるようにする */
+.prose a {
+  color: var(--color-text-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.prose a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.prose a:focus-visible {
+  outline: 2px solid var(--color-text-accent);
+  outline-offset: 2px;
+}
+
+.prose a:visited {
+  color: color-mix(in srgb, var(--color-text-accent) 70%, #1f2937);
+}
+
+.prose a:active {
+  opacity: 0.85;
+}
+
+/* 白文字バブル内は可読性優先 */
+.prose.text-white a,
+.prose.text-white a:visited {
+  color: #ffffff;
+}
+
 /* ファイルプレビュー全体のコンテナ */
 .file-preview-item {
   display: flex;
@@ -334,4 +366,3 @@ html[data-theme="dark"] {
 .bg-state-base-active { background-color: var(--color-state-base-active) !important; }
 .bg-state-base-hover { background-color: var(--color-state-base-hover) !important; }
 .text-text-accent { color: var(--color-text-accent) !important; }
-

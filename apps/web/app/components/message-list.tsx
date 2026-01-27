@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import toast from 'react-hot-toast';
@@ -129,9 +130,12 @@ export function MessageList({ messages, session, currentTask, isLoading, streamE
                     )}
                     <div></div>
                     <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
+                      remarkPlugins={[remarkGfm, remarkBreaks]}
                       className="prose prose-sm max-w-none text-slate-800 leading-relaxed"
                       components={{
+                        a({ node, ...props }) {
+                          return <a {...props} target="_blank" rel="noopener noreferrer" />;
+                        },
                         code({ node, className, children, ...props }) {
                           const match = /language-(\w+)/.exec(className || '');
                           const isInline = node?.tagName === 'code' && !match;
@@ -257,9 +261,12 @@ export function MessageList({ messages, session, currentTask, isLoading, streamE
                     )}
                     <div className="markdown-body !text-white">
                       <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
+                        remarkPlugins={[remarkGfm, remarkBreaks]}
                         className="prose prose-sm max-w-none text-white leading-relaxed"
                         components={{
+                          a({ node, ...props }) {
+                            return <a {...props} target="_blank" rel="noopener noreferrer" />;
+                          },
                           code({ node, className, children, ...props }) {
                             const match = /language-(\w+)/.exec(className || '');
                             const isInline = node?.tagName === 'code' && !match;
