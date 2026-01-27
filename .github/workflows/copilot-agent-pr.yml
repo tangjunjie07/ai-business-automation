@@ -165,8 +165,9 @@ jobs:
               }
             });
 
+            const currentInstruction = context.payload.comment?.body || '';
             prompt += "\n[Current Instruction]\n";
-            prompt += context.payload.comment.body;
+            prompt += currentInstruction;
 
             core.setOutput("prompt", prompt);
 
