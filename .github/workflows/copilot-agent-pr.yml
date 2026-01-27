@@ -218,7 +218,7 @@ jobs:
                 return;
               }
 
-              const url = `${endpoint.replace(/\\/$/, '')}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+              const url = `${endpoint.replace(/\/$/, '')}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
               const payload = {
                 messages: [
                   { role: 'system', content: 'You are a coding agent for this repository. If you can implement the fix, output a unified diff patch only. If requirements are unclear, ask concise clarifying questions in Japanese, without code fences.' },
