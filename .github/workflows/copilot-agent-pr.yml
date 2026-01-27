@@ -1,0 +1,372 @@
+name: Copilot Agent (OpenAI + PR)
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  agent:
+    if: contains(github.event.comment.body, '@copilot') && !contains(github.event.comment.body, '@copilot merge')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Prepare branch
+        run: |
+          BRANCH=copilot/issue-${{ github.event.issue.number }}
+          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
+          git checkout -B "$BRANCH"
+
+      - name: Ensure issue is copilot-ready
+        id: ready
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const labels = (issue.labels || []).map(label => label.name);
+            const ready = labels.includes('copilot-ready');
+            core.setOutput('ready', ready ? 'true' : 'false');
+            if (!ready) {
+              core.info('Issue is not marked copilot-ready. Skipping agent run.');
+            }
+
+      - name: Install OpenAI SDK
+        if: steps.ready.outputs.ready == 'true'
+        run: npm install openai --no-save --package-lock=false
+
+      - name: Build conversation prompt
+        if: steps.ready.outputs.ready == 'true'
+        id: prompt
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const readFile = (filePath) => {
+              try {
+                return fs.readFileSync(path.join(process.env.GITHUB_WORKSPACE, filePath), 'utf-8');
+              } catch {
+                return '';
+              }
+            };
+
+            const readTree = (dir, maxDepth = 2) => {
+              const base = path.join(process.env.GITHUB_WORKSPACE, dir);
+              const walk = (current, depth) => {
+                if (depth > maxDepth) return [];
+                let entries = [];
+                try {
+                  const items = fs.readdirSync(current, { withFileTypes: true });
+                  for (const item of items) {
+                    if (item.name.startsWith('.') || item.name === 'node_modules') continue;
+                    const full = path.join(current, item.name);
+                    const rel = path.relative(base, full);
+                    entries.push(`${'  '.repeat(depth)}- ${rel}${item.isDirectory() ? '/' : ''}`);
+                    if (item.isDirectory()) {
+                      entries = entries.concat(walk(full, depth + 1));
+                    }
+                  }
+                } catch {
+                  return entries;
+                }
+                return entries;
+              };
+              return walk(base, 0).join('\n');
+            };
+
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
+
+            const architecture = readFile('apps/web/docs/architecture.md');
+            const onboarding = readFile('apps/web/docs/onboarding.md');
+            const webTree = readTree('apps/web', 2);
+
+            let prompt = "[Repository Context]\n";
+            prompt += architecture ? `${architecture}\n\n` : "No architecture doc found.\n\n";
+            prompt += onboarding ? `${onboarding}\n\n` : "No onboarding doc found.\n\n";
+            prompt += "[apps/web tree]\n";
+            prompt += `${webTree}\n\n`;
+            prompt += "[Issue Description]\n";
+            prompt += issue.data.title + "\n\n";
+            prompt += (issue.data.body || "") + "\n\n";
+            prompt += "[Recent Conversation]\n";
+
+            comments.data.slice(-10).forEach(c => {
+              if (c.body.includes("@copilot")) {
+                prompt += "User: " + c.body + "\n";
+              }
+              if (c.user.type === "Bot" && c.body.includes("Copilot Agent")) {
+                prompt += "Agent: " + c.body + "\n";
+              }
+            });
+
+            prompt += "\n[Current Instruction]\n";
+            prompt += context.payload.comment.body;
+
+            core.setOutput("prompt", prompt);
+
+      - name: Run Inline Agent (OpenAI)
+        if: steps.ready.outputs.ready == 'true'
+        env:
+          AGENT_PROMPT: ${{ steps.prompt.outputs.prompt }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          BRANCH: ${{ env.BRANCH }}
+        run: |
+          node <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const OpenAI = require('openai').default;
+          const { execSync } = require('child_process');
+
+          const prompt = process.env.AGENT_PROMPT || 'Apply a minimal code change.';
+          const branch = process.env.BRANCH;
+
+          const envFile = process.env.GITHUB_ENV;
+          const setEnv = (key, value) => {
+            if (!envFile) return;
+            fs.appendFileSync(envFile, `${key}=${value}\n`);
+          };
+
+          (async () => {
+            try {
+              const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+              const res = await client.chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages: [
+                  { role: 'system', content: 'You are a coding agent for this repository. Read the provided context and output a unified diff patch only. Do not include code fences or explanations.' },
+                  { role: 'user', content: prompt }
+                ],
+                temperature: 0.7,
+                max_tokens: 3000
+              });
+
+              const patch = (res.choices?.[0]?.message?.content || '').trim();
+              if (!patch.startsWith('diff --git')) {
+                throw new Error('Model did not return a unified diff patch.');
+              }
+
+              const patchPath = path.join(process.cwd(), 'agent.patch');
+              fs.writeFileSync(patchPath, patch, 'utf-8');
+              execSync(`git apply --whitespace=fix ${patchPath}`);
+
+              execSync('git config user.name "Copilot Agent"');
+              execSync('git config user.email "copilot-agent@github.com"');
+              execSync('git add -A');
+
+              const staged = execSync('git diff --cached --name-only').toString().trim();
+              if (!staged) {
+                console.log('No changes detected.');
+                setEnv('CHANGED', 'false');
+                return;
+              }
+
+              execSync('git commit -m "Copilot Agent: apply issue changes"');
+              execSync(`git push origin ${branch} --force`);
+
+              setEnv('CHANGED', 'true');
+              console.log('Changes pushed to branch:', branch);
+            } catch (err) {
+              console.error('Agent run failed:', err);
+              process.exit(1);
+            }
+          })();
+          EOF
+
+      - name: Run web tests
+        if: env.CHANGED == 'true'
+        env:
+          CI: true
+        run: |
+          set +e
+          cd apps/web
+          if [ -f .env.example ] && [ ! -f .env.local ]; then
+            cp .env.example .env.local
+          fi
+          npm ci
+          npm run lint > ../../agent-test-report.txt 2>&1
+          LINT_STATUS=$?
+          npm run build >> ../../agent-test-report.txt 2>&1
+          BUILD_STATUS=$?
+          npx playwright install --with-deps >> ../../agent-test-report.txt 2>&1
+          npm run test:e2e >> ../../agent-test-report.txt 2>&1
+          E2E_STATUS=$?
+          echo "lint=$LINT_STATUS build=$BUILD_STATUS e2e=$E2E_STATUS" >> ../../agent-test-report.txt
+          if [ $LINT_STATUS -ne 0 ] || [ $BUILD_STATUS -ne 0 ] || [ $E2E_STATUS -ne 0 ]; then
+            echo "TEST_STATUS=failed" >> $GITHUB_ENV
+          else
+            echo "TEST_STATUS=passed" >> $GITHUB_ENV
+          fi
+          exit 0
+
+      - name: Publish test report html
+        if: env.CHANGED == 'true'
+        run: |
+          node <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+
+          const reportPath = path.join(process.cwd(), 'agent-test-report.txt');
+          const report = fs.existsSync(reportPath) ? fs.readFileSync(reportPath, 'utf-8') : 'No test report found.';
+          const html = `<!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1" />
+              <title>Agent Test Report</title>
+              <style>
+                :root { color-scheme: light; }
+                body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; margin: 32px; line-height: 1.5; }
+                pre { background: #f7f7f7; padding: 16px; border-radius: 8px; overflow: auto; }
+              </style>
+            </head>
+            <body>
+              <h1>Agent Test Report</h1>
+              <pre>${report.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</pre>
+            </body>
+          </html>`;
+          fs.mkdirSync(path.join(process.cwd(), 'docs'), { recursive: true });
+          fs.writeFileSync(path.join(process.cwd(), 'docs', 'index.html'), html, 'utf-8');
+          EOF
+          git add docs/index.html agent-test-report.txt
+
+      - name: Post test questions
+        if: env.CHANGED == 'true' && env.TEST_STATUS == 'failed'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = `${process.env.GITHUB_WORKSPACE}/agent-test-report.txt`;
+            const report = fs.existsSync(reportPath) ? fs.readFileSync(reportPath, 'utf-8') : 'No test report found.';
+            const lines = report.split('\n').slice(-80).join('\n');
+            const questions = [
+              'Which environment variables are required for apps/web build and E2E?',
+              'Do we need to seed a database or use a mock for E2E?',
+              'Is there a preferred base URL or port for tests in CI?',
+              'Should failing tests be skipped or retried in CI?'
+            ];
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: [
+                'Tests failed during the agent run. I need clarification before proceeding:',
+                '',
+                ...questions.map(q => `- ${q}`),
+                '',
+                'Recent test output:',
+                '```',
+                lines,
+                '```'
+              ].join('\n')
+            });
+
+      - name: Create or Update Pull Request
+        if: env.CHANGED == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const branch = process.env.BRANCH;
+            const head = `${owner}:${branch}`;
+            const reportPath = `${process.env.GITHUB_WORKSPACE}/agent-test-report.txt`;
+            const report = fs.existsSync(reportPath) ? fs.readFileSync(reportPath, 'utf-8') : 'No test report found.';
+            const reportBlock = `\n\n## Test Report\n\n\`\`\`\n${report}\n\`\`\`\n`;
+
+            const prs = await github.rest.pulls.list({
+              owner,
+              repo,
+              head,
+              state: 'open'
+            });
+
+            if (prs.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prs.data[0].number,
+                body: reportBlock
+              });
+              return;
+            }
+
+            await github.rest.pulls.create({
+              owner,
+              repo,
+              title: 'Copilot Agent PR',
+              head: branch,
+              base: 'main',
+              body: 'Agent completed one iteration. Review and reply `@copilot merge`.' + reportBlock
+            });
+
+      - name: Reply to issue
+        if: steps.ready.outputs.ready == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const message = process.env.CHANGED == 'true'
+              ? 'Changes are ready. A PR has been created from the copilot branch.'
+              : 'No changes were produced. If you want another attempt, please clarify the request.';
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });
+
+  auto-merge:
+    if: contains(github.event.comment.body, '@copilot merge')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const head = `${owner}:copilot/issue-${context.issue.number}`;
+
+            const prs = await github.rest.pulls.list({
+              owner,
+              repo,
+              head,
+              state: 'open'
+            });
+
+            if (!prs.data.length) {
+              core.info('No open PR to merge.');
+              return;
+            }
+
+            await github.rest.pulls.merge({
+              owner,
+              repo,
+              pull_number: prs.data[0].number,
+              merge_method: 'squash'
+            });
