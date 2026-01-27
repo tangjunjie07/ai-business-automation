@@ -24,13 +24,10 @@ jobs:
 
             const body = issue.body || '';
             const requiredSections = [
-              { title: 'Summary', allowNA: false },
-              { title: 'Steps to Reproduce', allowNA: false },
-              { title: 'Expected Behavior', allowNA: false },
-              { title: 'Actual Behavior', allowNA: false },
-              { title: 'Environment', allowNA: false },
-              { title: 'Logs / Screenshots', allowNA: true },
+              { title: '概要', allowNA: false },
+              { title: '期待される動作', allowNA: false },
             ];
+
 
             const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const sectionContent = (title) => {
@@ -62,7 +59,7 @@ jobs:
                 owner,
                 repo,
                 issue_number: issue.number,
-                body: `@${context.payload.comment.user.login} @copilot を開始する前に、もう少し情報が必要です。以下を補足してください:\n\n${missingList}\n\n更新後、もう一度 @copilot をメンションしてください。`
+                body: `@${context.payload.comment.user.login} @copilot を開始する前に、必須項目の補足が必要です。以下を記入してください:\n\n${missingList}\n\n※「概要」と「期待される動作」は必須です。その他の項目は精度向上のため、可能な範囲で記入してください。\n\n更新後、もう一度 @copilot をメンションしてください。`
               });
               return;
             }

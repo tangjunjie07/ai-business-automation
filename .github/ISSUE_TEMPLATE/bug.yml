@@ -25,7 +25,7 @@ body:
         2. ...
         3. ...
     validations:
-      required: true
+      required: false
   - type: textarea
     id: expected
     attributes:
@@ -39,7 +39,7 @@ body:
       label: 実際の動作
       description: 実際に起きている挙動を記載してください。
     validations:
-      required: true
+      required: false
   - type: textarea
     id: environment
     attributes:
@@ -47,11 +47,11 @@ body:
       description: OS、ブラウザ、デバイス、アプリのバージョン/コミットを記載してください。
       placeholder: "macOS 14.2、Chrome 120、commit abc123"
     validations:
-      required: true
+      required: false
   - type: textarea
     id: logs
     attributes:
       label: ログ / スクリーンショット
       description: ログ、コンソール出力、スクリーンショットがあれば追加してください。なければ N/A と記載してください。
     validations:
-      required: true
+      required: false
