@@ -3,14 +3,17 @@ name: Copilot Issue Gate
 on:
   issue_comment:
     types: [created]
+  issues:
+    types: [opened, edited]
 
 jobs:
   gate:
-    if: contains(github.event.comment.body, '@copilot')
+    if: github.event_name == 'issues' || contains(github.event.comment.body, '@copilot')
     runs-on: ubuntu-latest
     permissions:
       issues: write
       contents: read
+      actions: write
     steps:
       - name: Validate issue details
         uses: actions/github-script@v7
@@ -23,6 +26,7 @@ jobs:
             }
 
             const body = issue.body || '';
+            const commenter = context.payload.comment?.user?.login || issue.user?.login || 'user';
             const requiredSections = [
               { title: '概要', allowNA: false },
               { title: '期待される動作', allowNA: false },
@@ -59,7 +63,7 @@ jobs:
                 owner,
                 repo,
                 issue_number: issue.number,
-                body: `@${context.payload.comment.user.login} @copilot を開始する前に、必須項目の補足が必要です。以下を記入してください:\n\n${missingList}\n\n※「概要」と「期待される動作」は必須です。その他の項目は精度向上のため、可能な範囲で記入してください。\n\n更新後、もう一度 @copilot をメンションしてください。`
+                body: `@${commenter} @copilot を開始する前に、必須項目の補足が必要です。以下を記入してください:\n\n${missingList}\n\n※「概要」と「期待される動作」は必須です。その他の項目は精度向上のため、可能な範囲で記入してください。\n\n更新後、もう一度 @copilot をメンションしてください。`
               });
               return;
             }
@@ -84,4 +88,15 @@ jobs:
               labels: [labelName]
             });
 
-            core.info('Issue is marked copilot-ready. No reply comment is posted.');
+            const defaultBranch = context.payload.repository?.default_branch || 'main';
+            await github.rest.actions.createWorkflowDispatch({
+              owner,
+              repo,
+              workflow_id: 'copilot-agent-pr.yml',
+              ref: defaultBranch,
+              inputs: {
+                issue_number: String(issue.number)
+              }
+            });
+
+            core.info('Issue is marked copilot-ready. Agent workflow dispatched.');
