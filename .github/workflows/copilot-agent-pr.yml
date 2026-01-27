@@ -38,7 +38,7 @@ jobs:
             const ready = labels.includes('copilot-ready');
             core.setOutput('ready', ready ? 'true' : 'false');
             if (!ready) {
-              core.info('Issue is not marked copilot-ready. Skipping agent run.');
+              core.info('Issue に copilot-ready が付いていないため、実行をスキップします。');
             }
 
       - name: Install OpenAI SDK
@@ -177,7 +177,7 @@ jobs:
 
               const staged = execSync('git diff --cached --name-only').toString().trim();
               if (!staged) {
-                console.log('No changes detected.');
+                console.log('変更が検出されませんでした。');
                 setEnv('CHANGED', 'false');
                 return;
               }
@@ -272,7 +272,7 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.issue.number,
               body: [
-                'Tests failed during the agent run. I need clarification before proceeding:',
+                'テストが失敗しました。続行する前に確認が必要です:',
                 '',
                 ...questions.map(q => `- ${q}`),
                 '',
@@ -328,8 +328,8 @@ jobs:
         with:
           script: |
             const message = process.env.CHANGED == 'true'
-              ? 'Changes are ready. A PR has been created from the copilot branch.'
-              : 'No changes were produced. If you want another attempt, please clarify the request.';
+              ? '変更が用意できました。copilot ブランチから PR を作成しました。'
+              : '変更が生成されませんでした。もう一度試す場合は依頼内容を具体化してください。';
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,

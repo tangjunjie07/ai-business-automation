@@ -62,7 +62,7 @@ jobs:
                 owner,
                 repo,
                 issue_number: issue.number,
-                body: `@${context.payload.comment.user.login} I need a bit more detail before @copilot can start. Please fill in:\n\n${missingList}\n\nOnce updated, mention @copilot again and I will proceed.`
+                body: `@${context.payload.comment.user.login} @copilot を開始する前に、もう少し情報が必要です。以下を補足してください:\n\n${missingList}\n\n更新後、もう一度 @copilot をメンションしてください。`
               });
               return;
             }
@@ -91,5 +91,5 @@ jobs:
               owner,
               repo,
               issue_number: issue.number,
-              body: `@${context.payload.comment.user.login} Thanks! The issue has enough detail. @copilot can start now. I added the ${labelName} label and will expect a PR next.`
+              body: `@${context.payload.comment.user.login} ありがとうございます。情報が十分なので @copilot を開始できます。${labelName} ラベルを付与しました。次のPRをお待ちください。`
             });

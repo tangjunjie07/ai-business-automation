@@ -1,57 +1,57 @@
-name: Bug report
-description: Report a bug to help us improve
-title: "[Bug]: "
+name: バグ報告
+description: 不具合を報告してプロダクト改善にご協力ください
+title: "[バグ]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for filing a bug. Please fill out all required fields so @copilot can start quickly.
+        バグ報告ありがとうございます。@copilot がすぐに対応できるよう、必須項目をすべて記入してください。
   - type: textarea
     id: summary
     attributes:
-      label: Summary
-      description: One or two sentences describing the bug.
-      placeholder: When I ..., I expected ..., but ...
+      label: 概要
+      description: バグの内容を1〜2文で説明してください。
+      placeholder: 「〜すると、〜を期待したが、実際は〜だった」
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Steps to Reproduce
-      description: Provide a numbered list of steps.
+      label: 再現手順
+      description: 番号付きで手順を記載してください。
       placeholder: |
-        1. Go to ...
-        2. Click ...
-        3. See error ...
+        1. ...
+        2. ...
+        3. ...
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Expected Behavior
-      description: What should happen?
+      label: 期待される動作
+      description: 本来どう動作するべきか記載してください。
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: Actual Behavior
-      description: What actually happens?
+      label: 実際の動作
+      description: 実際に起きている挙動を記載してください。
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
-      label: Environment
-      description: OS, browser, device, and app version/commit.
-      placeholder: "macOS 14.2, Chrome 120, commit abc123"
+      label: 環境
+      description: OS、ブラウザ、デバイス、アプリのバージョン/コミットを記載してください。
+      placeholder: "macOS 14.2、Chrome 120、commit abc123"
     validations:
       required: true
   - type: textarea
     id: logs
     attributes:
-      label: Logs / Screenshots
-      description: Add logs, console output, or screenshots if available. If none, write N/A.
+      label: ログ / スクリーンショット
+      description: ログ、コンソール出力、スクリーンショットがあれば追加してください。なければ N/A と記載してください。
     validations:
       required: true
