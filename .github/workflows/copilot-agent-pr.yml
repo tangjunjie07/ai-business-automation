@@ -204,7 +204,7 @@ jobs:
           if [ -f .env.example ] && [ ! -f .env.local ]; then
             cp .env.example .env.local
           fi
-          npm ci
+          npm install --no-audit --no-fund
           npm run lint > ../../agent-test-report.txt 2>&1
           LINT_STATUS=$?
           npm run build >> ../../agent-test-report.txt 2>&1
