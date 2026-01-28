@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
-      contents: read
+      contents: write
     services:
       postgres:
         image: postgres:16
@@ -52,6 +52,7 @@ jobs:
         run: |
           set +e
           cd apps/web
+          rm -f test-results/ui-screenshot.png
           if [ -f .env.example ] && [ ! -f .env.local ]; then
             cp .env.example .env.local
           fi
@@ -77,11 +78,26 @@ jobs:
           fi
           exit 0
 
+      - name: Commit screenshot to PR branch
+        if: always()
+        run: |
+          if ls apps/web/test-results/*.png >/dev/null 2>&1; then
+            git config user.name "ci-bot"
+            git config user.email "ci-bot@users.noreply.github.com"
+            git add -f apps/web/test-results/*.png
+            if ! git diff --cached --quiet; then
+              git commit -m "chore: update e2e screenshot"
+              git push
+              echo "SCREENSHOT_UPDATED=true" >> $GITHUB_ENV
+            fi
+          fi
+
       - name: Comment test report
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
+            const path = require('path');
             const reportPath = `${process.env.GITHUB_WORKSPACE}/agent-test-report.txt`;
             const report = fs.existsSync(reportPath) ? fs.readFileSync(reportPath, 'utf-8') : 'No test report found.';
             const summary = {
@@ -90,7 +106,16 @@ jobs:
               e2e: report.includes('e2e=0') ? 'pass' : 'fail',
             };
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${process.env.GITHUB_RUN_ID}`;
-            const body = `## Test Report\n- Lint: ${summary.lint}\n- Build: ${summary.build}\n- E2E: ${summary.e2e}\n\nArtifacts (screenshots/report):\n\`\`\`\n${runUrl}\n\`\`\`\n\n<details>\n<summary>Logs</summary>\n\n\`\`\`\n${report}\n\`\`\`\n</details>\n`;
+            const screenshotDir = path.join(process.env.GITHUB_WORKSPACE, 'apps/web/test-results');
+            let screenshotLinks = '';
+            if (fs.existsSync(screenshotDir)) {
+              const files = fs.readdirSync(screenshotDir).filter(name => name.endsWith('.png'));
+              if (files.length > 0) {
+                const links = files.map(name => `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${context.payload.pull_request.head.ref}/apps/web/test-results/${name}`);
+                screenshotLinks = `\nScreenshots:\\n\\\n\\\n${links.join('\\n')}\\\n\\\n`;
+              }
+            }
+            const body = `## Test Report\n- Lint: ${summary.lint}\n- Build: ${summary.build}\n- E2E: ${summary.e2e}\n${screenshotLinks}\nArtifacts (screenshots/report):\n\`\`\`\n${runUrl}\n\`\`\`\n\n<details>\n<summary>Logs</summary>\n\n\`\`\`\n${report}\n\`\`\`\n</details>\n`;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
