@@ -145,12 +145,27 @@ jobs:
             const architecture = readFile('apps/web/docs/architecture.md');
             const onboarding = readFile('apps/web/docs/onboarding.md');
             const webTree = readTree('apps/web', 2);
+            const keyFiles = [
+              'apps/web/app/chat/page.tsx',
+              'apps/web/app/components/message-list.tsx',
+              'apps/web/app/components/chat-input.tsx',
+              'apps/web/app/components/three-col-layout.tsx',
+              'apps/web/app/components/sidebar.tsx'
+            ];
+            const keyContents = keyFiles
+              .map((filePath) => {
+                const content = readFile(filePath);
+                return content ? `\n\n[${filePath}]\n${content}` : `\n\n[${filePath}] (missing)`;
+              })
+              .join('');
 
             let prompt = "[Repository Context]\n";
             prompt += architecture ? `${architecture}\n\n` : "No architecture doc found.\n\n";
             prompt += onboarding ? `${onboarding}\n\n` : "No onboarding doc found.\n\n";
             prompt += "[apps/web tree]\n";
             prompt += `${webTree}\n\n`;
+            prompt += "[Key Files]\n";
+            prompt += `${keyContents}\n\n`;
             prompt += "[Issue Description]\n";
             prompt += issue.data.title + "\n\n";
             prompt += (issue.data.body || "") + "\n\n";
