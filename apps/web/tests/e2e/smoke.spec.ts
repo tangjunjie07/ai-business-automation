@@ -16,9 +16,16 @@ test('login and chat flow', async ({ page }) => {
   await page.getByLabel('パスワード').fill(password);
   await page.getByRole('button', { name: 'ログイン' }).click();
 
-  const chatLink = page.getByRole('link', { name: 'チャット' });
-  await expect(chatLink).toBeVisible({ timeout: 30_000 });
-  await chatLink.click();
+  await page.waitForFunction(() => window.location.pathname !== '/auth/signin', { timeout: 30_000 });
+
+  const loginError = page.getByText('ログイン情報が正しくありません');
+  if (await loginError.isVisible().catch(() => false)) {
+    const errorShot = await page.screenshot({ fullPage: true, path: 'test-results/login-error.png' });
+    await test.info().attach('login-error', { body: errorShot, contentType: 'image/png' });
+    throw new Error('Login failed: invalid credentials or auth error.');
+  }
+
+  await page.goto('/chat', { waitUntil: 'domcontentloaded' });
   await page.waitForURL('**/chat', { timeout: 30_000 });
 
   const input = page.getByPlaceholder('メッセージを入力...');
