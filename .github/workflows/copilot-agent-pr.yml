@@ -91,25 +91,28 @@ jobs:
       - name: Build search snippets
         if: steps.ready.outputs.ready == 'true' && steps.ready.outputs.allowed == 'true'
         run: |
-          python3 <<'PY'
-          import json
-          import os
-          import re
-          event_path = os.environ.get("GITHUB_EVENT_PATH")
-          data = {}
-          if event_path and os.path.exists(event_path):
-            with open(event_path, "r", encoding="utf-8") as f:
-              data = json.load(f)
-          issue = data.get("issue") or {}
-          text = f"{issue.get('title','')}\n{issue.get('body','')}"
-          # extract simple keywords (alnum + -/_)
-          tokens = re.findall(r"[A-Za-z0-9_./-]{4,}", text)
-          # drop common noise
-          stop = {"http", "https", "www", "com", "html", "json", "true", "false"}
-          keywords = [t for t in tokens if t.lower() not in stop][:20]
-          with open(".github/issue-keywords.txt", "w", encoding="utf-8") as f:
-            f.write("\n".join(dict.fromkeys(keywords)))
-          PY
+          node <<'JS'
+          const fs = require('fs');
+          const path = require('path');
+          const eventPath = process.env.GITHUB_EVENT_PATH;
+          let data = {};
+          if (eventPath && fs.existsSync(eventPath)) {
+            data = JSON.parse(fs.readFileSync(eventPath, 'utf-8'));
+          }
+          const issue = data.issue || {};
+          const text = `${issue.title || ''}\n${issue.body || ''}`;
+          const tokens = text.match(/[A-Za-z0-9_./-]{4,}/g) || [];
+          const stop = new Set(['http', 'https', 'www', 'com', 'html', 'json', 'true', 'false']);
+          const keywords = [];
+          for (const token of tokens) {
+            const lower = token.toLowerCase();
+            if (stop.has(lower)) continue;
+            if (!keywords.includes(token)) keywords.push(token);
+            if (keywords.length >= 20) break;
+          }
+          fs.mkdirSync(path.dirname('.github/issue-keywords.txt'), { recursive: true });
+          fs.writeFileSync('.github/issue-keywords.txt', keywords.join('\n'), 'utf-8');
+          JS
 
           : > .github/agent-context.txt
           if [ ! -s .github/issue-keywords.txt ]; then
