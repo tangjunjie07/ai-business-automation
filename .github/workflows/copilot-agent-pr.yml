@@ -12,6 +12,20 @@ jobs:
     permissions:
       pull-requests: write
       contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_business_automation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     steps:
       - uses: actions/checkout@v4
 
@@ -27,12 +41,22 @@ jobs:
       - name: Run tests with report
         env:
           CI: true
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_business_automation_test
+          NEXTAUTH_URL: http://localhost:3000
+          NEXTAUTH_SECRET: test-secret
+          DIFY_API_KEY: ${{ secrets.DIFY_API_KEY }}
+          DIFY_API_BASE: ${{ secrets.DIFY_API_BASE }}
+          E2E_TENANT_CODE: 0001
+          E2E_EMAIL: admin@gmail.com
+          E2E_PASSWORD: 123456
         run: |
           set +e
           cd apps/web
           if [ -f .env.example ] && [ ! -f .env.local ]; then
             cp .env.example .env.local
           fi
+          npx prisma migrate reset --force --schema prisma/schema.prisma >> ../../agent-test-report.txt 2>&1
+          npx prisma db seed --schema prisma/schema.prisma >> ../../agent-test-report.txt 2>&1
           npm run lint > ../../agent-test-report.txt 2>&1
           LINT_STATUS=$?
           npm run build >> ../../agent-test-report.txt 2>&1
