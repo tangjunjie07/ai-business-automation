@@ -224,7 +224,6 @@ jobs:
                   { role: 'system', content: 'You are a coding agent for this repository. If you can implement the fix, output a unified diff patch only. If requirements are unclear, ask concise clarifying questions in Japanese, without code fences.' },
                   { role: 'user', content: prompt }
                 ],
-                temperature: 0.7,
                 max_completion_tokens: 3000
               };
               if (model) payload.model = model;
