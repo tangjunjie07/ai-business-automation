@@ -50,17 +50,22 @@ test('login and chat flow', async ({ page }) => {
   await page.getByRole('button', { name: 'ログイン' }).click();
 
   const loginError = page.getByText('ログイン情報が正しくありません');
-  const result = await Promise.race([
-    page.waitForURL(/\/(dashboard|chat)/, { timeout: 30_000 }).then(() => 'nav').catch(() => null),
-    loginError.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'error').catch(() => null),
-    page.waitForTimeout(30_000).then(() => 'timeout'),
-  ]);
+  const navSucceeded = await page
+    .waitForURL(/\/(dashboard|chat)/, { timeout: 30_000 })
+    .then(() => true)
+    .catch(() => false);
 
-  if (result !== 'nav') {
+  if (!navSucceeded) {
+    if (await loginError.isVisible().catch(() => false)) {
+      await test.info().attach('login-error-text', {
+        body: 'ログイン情報が正しくありません',
+        contentType: 'text/plain',
+      });
+    }
     await attachUrl('login-failed');
     await attachDomShot('login-failed');
     await attachFullShot('login-failed');
-    throw new Error(`Login did not navigate. result=${result}, url=${page.url()}`);
+    throw new Error(`Login did not navigate. url=${page.url()}`);
   }
 
   await page.waitForLoadState('domcontentloaded');
