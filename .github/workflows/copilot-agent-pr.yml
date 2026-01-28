@@ -11,9 +11,26 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
-      contents: read
+      contents: write
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_business_automation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -27,13 +44,34 @@ jobs:
       - name: Run tests with report
         env:
           CI: true
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_business_automation_test
+          NEXTAUTH_URL: http://localhost:3000
+          NEXTAUTH_SECRET: test-secret
+          DIFY_API_KEY: ${{ secrets.DIFY_API_KEY }}
+          DIFY_API_BASE: ${{ secrets.DIFY_API_BASE }}
+          E2E_TENANT_CODE: "0001"
+          E2E_EMAIL: admin@gmail.com
+          E2E_PASSWORD: 123456
         run: |
           set +e
           cd apps/web
+          rm -f test-results/*.png
           if [ -f .env.example ] && [ ! -f .env.local ]; then
             cp .env.example .env.local
           fi
-          npm run lint > ../../agent-test-report.txt 2>&1
+          echo "=== prisma migrate reset ===" >> ../../agent-test-report.txt
+          npx prisma migrate reset --force --schema prisma/schema.prisma >> ../../agent-test-report.txt 2>&1
+          echo "=== prisma generate ===" >> ../../agent-test-report.txt
+          npx prisma generate --schema prisma/schema.prisma >> ../../agent-test-report.txt 2>&1
+          echo "=== prisma db seed ===" >> ../../agent-test-report.txt
+          npx prisma db seed --schema prisma/schema.prisma >> ../../agent-test-report.txt 2>&1
+          echo "=== psql check ===" >> ../../agent-test-report.txt
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL' >> ../../agent-test-report.txt 2>&1
+          SELECT id, code, name FROM tenants WHERE code = '0001';
+          SELECT id, email, role, tenant_id FROM app_users WHERE email = 'admin@gmail.com';
+          SQL
+          echo "=== lint ===" >> ../../agent-test-report.txt
+          npm run lint >> ../../agent-test-report.txt 2>&1
           LINT_STATUS=$?
           npm run build >> ../../agent-test-report.txt 2>&1
           BUILD_STATUS=$?
@@ -48,14 +86,49 @@ jobs:
           fi
           exit 0
 
+      - name: Commit screenshot to PR branch
+        if: always()
+        run: |
+          if ls apps/web/test-results/*.png >/dev/null 2>&1; then
+            git checkout -B "${GITHUB_HEAD_REF}"
+            git config user.name "ci-bot"
+            git config user.email "ci-bot@users.noreply.github.com"
+            git add -f apps/web/test-results/*.png
+            if ! git diff --cached --quiet; then
+              git commit -m "chore: update e2e screenshot"
+              echo "SCREENSHOT_COMMIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
+              git push origin "HEAD:${GITHUB_HEAD_REF}"
+              echo "SCREENSHOT_UPDATED=true" >> $GITHUB_ENV
+            fi
+          fi
+
       - name: Comment test report
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
+            const path = require('path');
             const reportPath = `${process.env.GITHUB_WORKSPACE}/agent-test-report.txt`;
             const report = fs.existsSync(reportPath) ? fs.readFileSync(reportPath, 'utf-8') : 'No test report found.';
-            const body = `## Test Report\n\n\`\`\`\n${report}\n\`\`\`\n`;
+            const summary = {
+              lint: report.includes('lint=0') ? 'pass' : 'warn/fail',
+              build: report.includes('build=0') ? 'pass' : 'fail',
+              e2e: report.includes('e2e=0') ? 'pass' : 'fail',
+            };
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const screenshotDir = path.join(process.env.GITHUB_WORKSPACE, 'apps/web/test-results');
+            let screenshotLinks = '';
+            let screenshotsSha = '';
+            if (fs.existsSync(screenshotDir)) {
+              const files = fs.readdirSync(screenshotDir).filter(name => name.endsWith('.png'));
+              if (files.length > 0) {
+                const ref = process.env.SCREENSHOT_COMMIT_SHA || context.payload.pull_request.head.sha;
+                const links = files.map(name => `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${ref}/apps/web/test-results/${name}`);
+                screenshotLinks = `\nScreenshots:\n\n${links.join('\n')}\n\n`;
+                screenshotsSha = `Screenshots commit SHA: ${ref}\n`;
+              }
+            }
+            const body = `## Test Report\n- Lint: ${summary.lint}\n- Build: ${summary.build}\n- E2E: ${summary.e2e}\n${screenshotsSha}${screenshotLinks}\nArtifacts (screenshots/report):\n\`\`\`\n${runUrl}\n\`\`\`\n\n<details>\n<summary>Logs</summary>\n\n\`\`\`\n${report}\n\`\`\`\n</details>\n`;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -63,6 +136,18 @@ jobs:
               issue_number: context.issue.number,
               body
             });
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+            agent-test-report.txt
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Fail if tests failed
         if: env.TEST_STATUS == 'failed'
