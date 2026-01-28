@@ -1,10 +1,43 @@
 import { expect, test } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
 
 test('login and chat flow', async ({ page }) => {
+  const resultsDir = path.resolve('test-results');
+  fs.mkdirSync(resultsDir, { recursive: true });
+
   const tenantCode = process.env.E2E_TENANT_CODE || '0001';
   const email = process.env.E2E_EMAIL || 'admin@gmail.com';
   const password = process.env.E2E_PASSWORD || '123456';
   const message = process.env.E2E_MESSAGE || 'E2E テスト: これは長文の入力です。'.repeat(10);
+
+  const stamp = () => new Date().toISOString().replace(/[:.]/g, '-');
+  const sanitize = (label: string) => label.replace(/[^a-zA-Z0-9_-]+/g, '_').toLowerCase();
+
+  const attachUrl = async (label: string) => {
+    await test.info().attach(`${label}-url`, {
+      body: page.url(),
+      contentType: 'text/plain',
+    });
+  };
+
+  const attachDomShot = async (label: string) => {
+    let region = page.locator('main');
+    if (await region.count() === 0) {
+      region = page.locator('body');
+    }
+    const fileName = `${sanitize(label)}-dom-${stamp()}.png`;
+    const filePath = path.join(resultsDir, fileName);
+    const shot = await region.screenshot({ path: filePath });
+    await test.info().attach(`${label}-dom`, { body: shot, contentType: 'image/png' });
+  };
+
+  const attachFullShot = async (label: string) => {
+    const fileName = `${sanitize(label)}-${stamp()}.png`;
+    const filePath = path.join(resultsDir, fileName);
+    const shot = await page.screenshot({ fullPage: true, path: filePath });
+    await test.info().attach(label, { body: shot, contentType: 'image/png' });
+  };
 
   await page.goto('/auth/signin', { waitUntil: 'domcontentloaded' });
   await expect(page.getByLabel('テナントコード')).toBeVisible();
@@ -24,31 +57,31 @@ test('login and chat flow', async ({ page }) => {
   ]);
 
   if (result !== 'nav') {
-    const errorShot = await page.screenshot({ fullPage: true, path: 'test-results/login-error.png' });
-    await test.info().attach('login-error', { body: errorShot, contentType: 'image/png' });
+    await attachUrl('login-failed');
+    await attachDomShot('login-failed');
+    await attachFullShot('login-failed');
     throw new Error(`Login did not navigate. result=${result}, url=${page.url()}`);
   }
 
   await page.waitForLoadState('domcontentloaded');
+  await attachFullShot('after-login');
   const currentPath = new URL(page.url()).pathname;
   if (currentPath !== '/chat') {
     await page.goto('/chat', { waitUntil: 'domcontentloaded' });
     await page.waitForURL('**/chat', { timeout: 30_000 });
   }
+  await attachFullShot('chat-page');
 
   const input = page.getByPlaceholder('メッセージを入力...');
   await expect(input).toBeVisible();
   await input.fill(message);
   await page.getByRole('button', { name: '送信' }).click();
+  await attachFullShot('after-send');
 
   await page.waitForFunction(() => {
     const items = document.querySelectorAll('.chat-answer-container');
     return items.length >= 2;
   }, { timeout: 60_000 });
 
-  const screenshot = await page.screenshot({ fullPage: true, path: 'test-results/ui-screenshot.png' });
-  await test.info().attach('ui-screenshot', {
-    body: screenshot,
-    contentType: 'image/png',
-  });
+  await attachFullShot('after-reply');
 });
