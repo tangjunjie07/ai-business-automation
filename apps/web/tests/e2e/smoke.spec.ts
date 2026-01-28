@@ -16,6 +16,9 @@ test('login and chat flow', async ({ page }) => {
   await page.getByLabel('パスワード').fill(password);
   await page.getByRole('button', { name: 'ログイン' }).click();
 
+  const chatLink = page.getByRole('link', { name: 'チャット' });
+  await expect(chatLink).toBeVisible({ timeout: 30_000 });
+  await chatLink.click();
   await page.waitForURL('**/chat', { timeout: 30_000 });
 
   const input = page.getByPlaceholder('メッセージを入力...');
