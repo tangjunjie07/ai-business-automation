@@ -309,7 +309,7 @@ jobs:
                 if (!file?.path || typeof file.content !== 'string') {
                   continue;
                 }
-                const relPath = file.path.replace(/^\\/+/, '');
+                const relPath = file.path.replace(/^\/+/, '');
                 if (relPath.includes('..')) {
                   throw new Error(`Invalid path: ${file.path}`);
                 }
