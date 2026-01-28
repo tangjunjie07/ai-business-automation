@@ -57,6 +57,8 @@ jobs:
           fi
           echo "=== prisma migrate reset ===" >> ../../agent-test-report.txt
           npx prisma migrate reset --force --schema prisma/schema.prisma >> ../../agent-test-report.txt 2>&1
+          echo "=== prisma generate ===" >> ../../agent-test-report.txt
+          npx prisma generate --schema prisma/schema.prisma >> ../../agent-test-report.txt 2>&1
           echo "=== prisma db seed ===" >> ../../agent-test-report.txt
           npx prisma db seed --schema prisma/schema.prisma >> ../../agent-test-report.txt 2>&1
           echo "=== lint ===" >> ../../agent-test-report.txt
