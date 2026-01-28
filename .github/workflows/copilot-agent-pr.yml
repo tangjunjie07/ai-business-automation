@@ -55,7 +55,12 @@ jobs:
             const fs = require('fs');
             const reportPath = `${process.env.GITHUB_WORKSPACE}/agent-test-report.txt`;
             const report = fs.existsSync(reportPath) ? fs.readFileSync(reportPath, 'utf-8') : 'No test report found.';
-            const body = `## Test Report\n\n\`\`\`\n${report}\n\`\`\`\n`;
+            const summary = {
+              lint: report.includes('lint=0') ? 'pass' : 'warn/fail',
+              build: report.includes('build=0') ? 'pass' : 'fail',
+              e2e: report.includes('e2e=0') ? 'pass' : 'fail',
+            };
+            const body = `## Test Report\n- Lint: ${summary.lint}\n- Build: ${summary.build}\n- E2E: ${summary.e2e}\n\n<details>\n<summary>Logs</summary>\n\n\`\`\`\n${report}\n\`\`\`\n</details>\n`;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
