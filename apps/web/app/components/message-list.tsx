@@ -23,8 +23,9 @@ export function MessageList({ messages, session, currentTask, isLoading, streamE
     return name.slice(0, 2).toUpperCase();
   })();
 
+  // flex-1で親の高さに追従し、入力欄直上まで拡張
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 flex-1 flex flex-col justify-end">
       {messages.map((message, idx) => {
         const isAssistant = message.role === 'assistant';
         if (isAssistant) {

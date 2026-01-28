@@ -43,7 +43,18 @@ export default function ChatPage() {
   const userId = session?.user?.id || null;
   const didInit = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+  const inputWrapperRef = useRef<HTMLDivElement | null>(null);
   const [isHeaderDropdownOpen, setIsHeaderDropdownOpen] = useState(false);
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    const el = messagesScrollRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+    } else if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    }
+  };
   const [renameModal, setRenameModal] = useState<{ show: boolean; id: string | null; name: string }>({ show: false, id: null, name: '' });
   const [confirmDialog, setConfirmDialog] = useState<{ show: boolean; type: 'pin' | 'delete' | null; id?: string; currentPinned?: boolean; message?: string }>({ show: false, type: null });
 
@@ -164,10 +175,53 @@ export default function ChatPage() {
 
   // メッセージが更新されたら自動スクロール
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
+    scrollToBottom('smooth');
   }, [messages]);
+
+  // Re-scroll when input wrapper size changes (e.g., attachments / textarea auto-resize)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let ro: ResizeObserver | null = null;
+    let mounted = true;
+
+    const setPadding = () => {
+      const wrapper = inputWrapperRef.current;
+      const el = messagesScrollRef.current;
+      if (!wrapper || !el) return;
+      const padding = wrapper.offsetHeight + 12;
+      el.style.paddingBottom = `${padding}px`;
+    };
+
+    const start = () => {
+      const wrapper = inputWrapperRef.current;
+      const el = messagesScrollRef.current;
+      if (!wrapper || !el) {
+        if (!mounted) return;
+        requestAnimationFrame(start);
+        return;
+      }
+
+      setPadding();
+
+      if (typeof ResizeObserver !== 'undefined') {
+        ro = new ResizeObserver(() => {
+          setPadding();
+          scrollToBottom('smooth');
+        });
+        ro.observe(wrapper);
+      }
+
+      window.addEventListener('resize', setPadding);
+    };
+
+    start();
+
+    return () => {
+      mounted = false;
+      if (ro) ro.disconnect();
+      window.removeEventListener('resize', setPadding);
+    };
+  }, []);
 
   // ドロップダウン外クリックで閉じる
   useEffect(() => {
@@ -533,21 +587,21 @@ export default function ChatPage() {
             )}
           </div>
         </header>
-        {/* メッセージリスト: Dify風 max-w-3xl, mx-auto。チャットエリア内で独立してスクロールし、入力欄は下部にsticky配置 */}
+        {/* メッセージリスト: このエリア内のみスクロール。画面全体はスクロールしない */}
         <div className="flex-1 flex flex-col min-h-0 relative h-full z-10">
-          <div className="flex-1 overflow-y-auto pb-60 chat-scrollbar">
-            <div className="max-w-3xl mx-auto w-full p-4 md:p-8 space-y-6 min-h-[200px] flex flex-col justify-end">
+          <div className="max-w-3xl mx-auto w-full p-4 md:p-8 space-y-6 min-h-[200px] flex-1 min-h-0 flex flex-col justify-end">
+            <div ref={messagesScrollRef} className="flex-1 min-h-0 overflow-y-auto">
               <MessageList messages={messages} session={session ?? undefined} currentTask={currentTask} isLoading={isLoading} streamError={streamError} />
               <div ref={messagesEndRef} />
-              {messages.length === 0 && (
-                <div className="text-center text-gray-400 py-12 select-none">私は高度な専門知識を持つプロの経理担当AIです。
-提供された請求書データ（OCR原文と構造化抽出結果）に基づき、最も適切な「勘定科目」と「補助科目」を特定し、仕訳データを作成することができます。</div>
-              )}
             </div>
+            {messages.length === 0 && (
+              <div className="text-center text-gray-400 py-12 select-none">私は高度な専門知識を持つプロの経理担当AIです。
+提供された請求書データ（OCR原文と構造化抽出結果）に基づき、最も適切な「勘定科目」と「補助科目」を特定し、仕訳データを作成することができます。</div>
+            )}
           </div>
           {/* 入力欄: 画面下部にabsolute配置（Dify風） */}
           <div className="absolute bottom-0 left-0 w-full z-[100] flex justify-center bg-chat-input-mask dark:bg-[#18181c] pb-4 pointer-events-none transition-colors duration-300">
-            <div className="relative mx-auto w-full max-w-[768px] px-4 pointer-events-auto">
+            <div ref={inputWrapperRef} className="relative mx-auto w-full max-w-[768px] px-4 pointer-events-auto">
               <div className="relative z-10 overflow-hidden rounded-xl border-0 bg-chat-bubble-bg shadow-none">
                 <div className="relative px-2 pt-2 border-0">
                   <ChatInput
