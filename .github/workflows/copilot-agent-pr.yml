@@ -221,7 +221,7 @@ jobs:
               const url = `${endpoint.replace(/\/$/, '')}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
               const payload = {
                 messages: [
-                  { role: 'system', content: 'You are a coding agent for this repository. If you can implement the fix, output a unified diff patch only. If requirements are unclear, ask concise clarifying questions in Japanese, without code fences.' },
+                  { role: 'system', content: 'You are a coding agent for this repository. If you can implement the fix, output a single JSON object only (no code fences). Schema: {"summary":"...", "files":[{"path":"relative/path.ext","content":"FULL FILE CONTENT"}]}. Include full contents for each modified file. If requirements are unclear, ask concise clarifying questions in Japanese as plain text (not JSON).' },
                   { role: 'user', content: prompt }
                 ],
                 max_completion_tokens: 3000
@@ -268,21 +268,21 @@ jobs:
                 return res.json();
               };
 
-              const normalize = (content) => {
-                let output = (content || '').trim();
-                const fenced = output.match(/```(?:diff|patch)?\s*([\s\S]*?)```/i);
-                if (fenced && fenced[1]) {
-                  output = fenced[1].trim();
+              const extractJson = (text) => {
+                const trimmed = (text || '').trim();
+                if (!trimmed) return null;
+                if (trimmed.startsWith('{')) {
+                  try { return JSON.parse(trimmed); } catch {}
                 }
-                const diffIndex = output.indexOf('diff --git');
-                if (diffIndex !== -1) {
-                  output = output.slice(diffIndex).trim();
+                const match = trimmed.match(/\{[\s\S]*\}/);
+                if (match) {
+                  try { return JSON.parse(match[0]); } catch {}
                 }
-                return output;
+                return null;
               };
 
               const data = await callModel();
-              let output = normalize(data.choices?.[0]?.message?.content || '');
+              let output = (data.choices?.[0]?.message?.content || '').trim();
               if (!output) {
                 throw new Error('Model returned empty output.');
               }
@@ -290,46 +290,35 @@ jobs:
               const responsePath = path.join(process.cwd(), 'agent-response.txt');
               fs.writeFileSync(responsePath, output, 'utf-8');
 
-              const tryApply = (patchText) => {
-                const patchPath = path.join(process.cwd(), 'agent.patch');
-                fs.writeFileSync(patchPath, patchText, 'utf-8');
-                execSync(`git apply --check ${patchPath}`);
-                execSync(`git apply --whitespace=fix ${patchPath}`);
-              };
-
-              let applied = false;
-              if (output.startsWith('diff --git')) {
-                try {
-                  tryApply(output);
-                  applied = true;
-                } catch {
-                  applied = false;
-                }
-              }
-
-              if (!applied) {
-                const retry = await callModel('Output a valid unified diff only. It must start with "diff --git". Do not include explanations or code fences.');
-                output = normalize(retry.choices?.[0]?.message?.content || '');
+              let json = extractJson(output);
+              if (!json && output.startsWith('{')) {
+                const retry = await callModel('Output a valid JSON object only. Do not include explanations or code fences.');
+                output = (retry.choices?.[0]?.message?.content || '').trim();
                 fs.writeFileSync(responsePath, output, 'utf-8');
-                if (output.startsWith('diff --git')) {
-                  try {
-                    tryApply(output);
-                    applied = true;
-                  } catch {
-                    applied = false;
-                  }
-                }
+                json = extractJson(output);
               }
 
-              if (!applied) {
-                const message = [
-                  '生成された差分に問題があり、適用できませんでした。',
-                  '自動再試行でも修復できなかったため、内容を少し詳しく書いて再度 @copilot をメンションしてください。'
-                ].join('\n');
-                fs.writeFileSync(responsePath, message, 'utf-8');
+              if (!json || !Array.isArray(json.files)) {
                 setEnv('CHANGED', 'false');
                 setEnv('RESPONSE_TYPE', 'question');
                 return;
+              }
+
+              const repoRoot = process.cwd();
+              for (const file of json.files) {
+                if (!file?.path || typeof file.content !== 'string') {
+                  continue;
+                }
+                const relPath = file.path.replace(/^\\/+/, '');
+                if (relPath.includes('..')) {
+                  throw new Error(`Invalid path: ${file.path}`);
+                }
+                const absPath = path.resolve(repoRoot, relPath);
+                if (!absPath.startsWith(repoRoot)) {
+                  throw new Error(`Path outside repo: ${file.path}`);
+                }
+                fs.mkdirSync(path.dirname(absPath), { recursive: true });
+                fs.writeFileSync(absPath, file.content, 'utf-8');
               }
 
               execSync('git config user.name "Copilot Agent"');
