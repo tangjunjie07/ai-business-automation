@@ -94,7 +94,7 @@ jobs:
             git config user.name "ci-bot"
             git config user.email "ci-bot@users.noreply.github.com"
             git rm -f apps/web/test-results/*.png >/dev/null 2>&1 || true
-            git add -f apps/web/test-results/*.png
+            git add -A apps/web/test-results
             if ! git diff --cached --quiet; then
               git commit -m "chore: update e2e screenshot"
               echo "SCREENSHOT_COMMIT_SHA=$(git rev-parse HEAD)" >> $GITHUB_ENV
