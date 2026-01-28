@@ -103,7 +103,7 @@ jobs:
           issue = data.get("issue") or {}
           text = f"{issue.get('title','')}\n{issue.get('body','')}"
           # extract simple keywords (alnum + -/_)
-          tokens = re.findall(r"[A-Za-z0-9_\\-/\\.]{4,}", text)
+          tokens = re.findall(r"[A-Za-z0-9_./-]{4,}", text)
           # drop common noise
           stop = {"http", "https", "www", "com", "html", "json", "true", "false"}
           keywords = [t for t in tokens if t.lower() not in stop][:20]
