@@ -67,8 +67,8 @@ jobs:
           npx prisma db seed --schema prisma/schema.prisma >> ../../agent-test-report.txt 2>&1
           echo "=== psql check ===" >> ../../agent-test-report.txt
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL' >> ../../agent-test-report.txt 2>&1
-          SELECT id, code, name FROM "Tenant" WHERE code = '0001';
-          SELECT id, email, role, "tenantId" FROM "User" WHERE email = 'admin@gmail.com';
+          SELECT id, code, name FROM tenants WHERE code = '0001';
+          SELECT id, email, role, tenant_id FROM app_users WHERE email = 'admin@gmail.com';
           SQL
           echo "=== lint ===" >> ../../agent-test-report.txt
           npm run lint >> ../../agent-test-report.txt 2>&1
@@ -117,14 +117,17 @@ jobs:
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${process.env.GITHUB_RUN_ID}`;
             const screenshotDir = path.join(process.env.GITHUB_WORKSPACE, 'apps/web/test-results');
             let screenshotLinks = '';
+            let screenshotsSha = '';
             if (fs.existsSync(screenshotDir)) {
               const files = fs.readdirSync(screenshotDir).filter(name => name.endsWith('.png'));
               if (files.length > 0) {
-                const links = files.map(name => `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${context.payload.pull_request.head.ref}/apps/web/test-results/${name}`);
+                const ref = context.payload.pull_request.head.sha;
+                const links = files.map(name => `https://raw.githubusercontent.com/${context.repo.owner}/${context.repo.repo}/${ref}/apps/web/test-results/${name}`);
                 screenshotLinks = `\nScreenshots:\\n\\\n\\\n${links.join('\\n')}\\\n\\\n`;
+                screenshotsSha = `Screenshots commit SHA: ${ref}\n`;
               }
             }
-            const body = `## Test Report\n- Lint: ${summary.lint}\n- Build: ${summary.build}\n- E2E: ${summary.e2e}\n${screenshotLinks}\nArtifacts (screenshots/report):\n\`\`\`\n${runUrl}\n\`\`\`\n\n<details>\n<summary>Logs</summary>\n\n\`\`\`\n${report}\n\`\`\`\n</details>\n`;
+            const body = `## Test Report\n- Lint: ${summary.lint}\n- Build: ${summary.build}\n- E2E: ${summary.e2e}\n${screenshotsSha}${screenshotLinks}\nArtifacts (screenshots/report):\n\`\`\`\n${runUrl}\n\`\`\`\n\n<details>\n<summary>Logs</summary>\n\n\`\`\`\n${report}\n\`\`\`\n</details>\n`;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
