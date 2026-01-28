@@ -17,13 +17,18 @@ test('login and chat flow', async ({ page }) => {
   await page.getByRole('button', { name: 'ログイン' }).click();
 
   const loginError = page.getByText('ログイン情報が正しくありません');
-  if (await loginError.isVisible().catch(() => false)) {
+  const result = await Promise.race([
+    page.waitForURL(/\/(dashboard|chat)/, { timeout: 30_000 }).then(() => 'nav').catch(() => null),
+    loginError.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'error').catch(() => null),
+    page.waitForTimeout(30_000).then(() => 'timeout'),
+  ]);
+
+  if (result !== 'nav') {
     const errorShot = await page.screenshot({ fullPage: true, path: 'test-results/login-error.png' });
     await test.info().attach('login-error', { body: errorShot, contentType: 'image/png' });
-    throw new Error('Login failed: invalid credentials or auth error.');
+    throw new Error(`Login did not navigate. result=${result}, url=${page.url()}`);
   }
 
-  await page.waitForURL(/\/(dashboard|chat)/, { timeout: 30_000 });
   await page.waitForLoadState('domcontentloaded');
   const currentPath = new URL(page.url()).pathname;
   if (currentPath !== '/chat') {
