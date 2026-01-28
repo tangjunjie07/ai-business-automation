@@ -5,6 +5,7 @@ const port = process.env.PORT ? Number(process.env.PORT) : 3000;
 export default defineConfig({
   testDir: './tests/e2e',
   timeout: 30_000,
+  reporter: [['html', { open: 'never' }]],
   expect: {
     timeout: 10_000,
   },
