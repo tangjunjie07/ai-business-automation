@@ -62,6 +62,21 @@ jobs:
           npx prisma generate --schema prisma/schema.prisma >> ../../agent-test-report.txt 2>&1
           echo "=== prisma db seed ===" >> ../../agent-test-report.txt
           npx prisma db seed --schema prisma/schema.prisma >> ../../agent-test-report.txt 2>&1
+          echo "=== db check ===" >> ../../agent-test-report.txt
+          node <<'JS' >> ../../agent-test-report.txt 2>&1
+          const { PrismaClient } = require('@prisma/client');
+          const prisma = new PrismaClient();
+          (async () => {
+            const tenant = await prisma.tenant.findUnique({ where: { code: '0001' } });
+            const user = await prisma.user.findUnique({ where: { email: 'admin@gmail.com' } });
+            console.log('tenant:', tenant ? { id: tenant.id, code: tenant.code, name: tenant.name } : null);
+            console.log('admin:', user ? { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId } : null);
+            await prisma.$disconnect();
+          })().catch(async (e) => {
+            console.error('db check failed', e);
+            await prisma.$disconnect();
+          });
+          JS
           echo "=== lint ===" >> ../../agent-test-report.txt
           npm run lint >> ../../agent-test-report.txt 2>&1
           LINT_STATUS=$?
