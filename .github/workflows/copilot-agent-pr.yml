@@ -93,6 +93,7 @@ jobs:
             git checkout -B "${GITHUB_HEAD_REF}"
             git config user.name "ci-bot"
             git config user.email "ci-bot@users.noreply.github.com"
+            git rm -f apps/web/test-results/*.png >/dev/null 2>&1 || true
             git add -f apps/web/test-results/*.png
             if ! git diff --cached --quiet; then
               git commit -m "chore: update e2e screenshot"
