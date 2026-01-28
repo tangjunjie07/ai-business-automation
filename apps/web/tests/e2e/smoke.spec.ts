@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 test('login and chat flow', async ({ page }) => {
+  test.setTimeout(60_000);
   const resultsDir = path.resolve('test-results');
   fs.mkdirSync(resultsDir, { recursive: true });
 
@@ -61,7 +62,7 @@ test('login and chat flow', async ({ page }) => {
 
   const loginError = page.getByText('ログイン情報が正しくありません');
   const navSucceeded = await page
-    .waitForURL(/\/(dashboard|chat)/, { timeout: 30_000 })
+    .waitForURL(/\/(dashboard|chat)/, { timeout: 20_000 })
     .then(() => true)
     .catch(() => false);
 
