@@ -22,21 +22,31 @@ test('login and chat flow', async ({ page }) => {
   };
 
   const attachDomShot = async (label: string) => {
-    let region = page.locator('main');
-    if (await region.count() === 0) {
-      region = page.locator('body');
+    if (page.isClosed()) return;
+    try {
+      let region = page.locator('main');
+      if (await region.count() === 0) {
+        region = page.locator('body');
+      }
+      const fileName = `${sanitize(label)}-dom-${stamp()}.png`;
+      const filePath = path.join(resultsDir, fileName);
+      const shot = await region.screenshot({ path: filePath });
+      await test.info().attach(`${label}-dom`, { body: shot, contentType: 'image/png' });
+    } catch {
+      // Ignore screenshot failures caused by page teardown.
     }
-    const fileName = `${sanitize(label)}-dom-${stamp()}.png`;
-    const filePath = path.join(resultsDir, fileName);
-    const shot = await region.screenshot({ path: filePath });
-    await test.info().attach(`${label}-dom`, { body: shot, contentType: 'image/png' });
   };
 
   const attachFullShot = async (label: string) => {
-    const fileName = `${sanitize(label)}-${stamp()}.png`;
-    const filePath = path.join(resultsDir, fileName);
-    const shot = await page.screenshot({ fullPage: true, path: filePath });
-    await test.info().attach(label, { body: shot, contentType: 'image/png' });
+    if (page.isClosed()) return;
+    try {
+      const fileName = `${sanitize(label)}-${stamp()}.png`;
+      const filePath = path.join(resultsDir, fileName);
+      const shot = await page.screenshot({ fullPage: true, path: filePath });
+      await test.info().attach(label, { body: shot, contentType: 'image/png' });
+    } catch {
+      // Ignore screenshot failures caused by page teardown.
+    }
   };
 
   await page.goto('/auth/signin', { waitUntil: 'domcontentloaded' });
